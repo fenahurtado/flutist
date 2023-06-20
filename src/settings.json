@@ -1,0 +1,84 @@
+{
+    "alpha_control": {
+        "acceleration": 20,
+        "deceleration": 100,
+        "kd": 0.0001,
+        "kd_vel": 0.0,
+        "ki": 0.1,
+        "ki_vel": 0.0,
+        "kp": 0.0,
+        "kp_vel": 0.005,
+        "proportional_coef": 10
+    },
+    "flow_control": {
+        "control_loop": 0,
+        "kd": 2816.0,
+        "ki": 0.0,
+        "kp": 345.0,
+        "var_to_control": 0
+    },
+    "flute_position": {
+        "X_F": 145.0,
+        "Z_F": 75.8,
+        "alpha_flauta": 0.785398163
+    },
+    "frequency_detection": {
+        "YIN": {
+            "center": false,
+            "fmax": 2093.0,
+            "fmin": 65.0,
+            "frame_length": 2048,
+            "hop_length": 512,
+            "pad_mode": 0,
+            "trough_threshold": 1e-05,
+            "win_length": 1024
+        },
+        "device": 1,
+        "method": 1,
+        "pYIN": {
+            "beta_parameter_a": 2,
+            "beta_parameter_b": 18.0,
+            "boltzmann_parameter": 2.0,
+            "center": false,
+            "fill_na": 0,
+            "fill_na_float": 0,
+            "fmax": 2093.0,
+            "fmin": 65.0,
+            "frame_length": 2048,
+            "hop_length": 512,
+            "max_transition_rate": 35.92,
+            "n_threshold": 99,
+            "no_trough_prob": 0.01,
+            "pad_mode": 0,
+            "resolution": 0.1,
+            "switch_prob": 0.01,
+            "win_length": 1024
+        }
+    },
+    "physical_constants": {
+        "dh": 54.65,
+        "dv": 0
+    },
+    "x_control": {
+        "acceleration": 500,
+        "deceleration": 1000,
+        "kd": 0.0,
+        "kd_vel": 0.0,
+        "ki": 0.1,
+        "ki_vel": 0.0,
+        "kp": 0.0,
+        "kp_vel": 0.0,
+        "proportional_coef": 2
+    },
+    "z_control": {
+        "acceleration": 500,
+        "deceleration": 1000,
+        "kd": 0.0,
+        "kd_vel": 0.0,
+        "ki": 0.0,
+        "ki_vel": 0.0,
+        "kp": 0.2,
+        "kp_vel": 0.0,
+        "proportional_coef": 2
+    }
+}
