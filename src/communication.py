@@ -23,6 +23,7 @@ class CommunicationCenter(Process):
         self.connect = connect
     
     def send_setAttrSingle(self, C1, data, device, dir1, dir2, dir3):
+        ## para settear atributos de forma explicita. Si falla porque se cerró la conexion, se vuelve a abrir
         try:
             r = C1.setAttrSingle(dir1, dir2, dir3, data)
             if r is None:

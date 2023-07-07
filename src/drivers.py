@@ -5,6 +5,7 @@ from librosa import yin, pyin, note_to_hz
 from scipy.io.wavfile import write
 
 from multiprocessing import Process, Event, Value, Pipe, Array, Manager
+import threading
 import src.lib.ethernet_ip.ethernetip as ethernetip
 from src.motor_route import *
 from src.route import *
@@ -15,11 +16,14 @@ import time
 import numpy as np
 import io
 
+# INPUT_FUNCTION_BITS definen el tipo de entrada que tienen los drivers AMCI
 INPUT_FUNCTION_BITS = {'General Purpose Input': 0, 'CW Limit': 1, 'CCW Limit': 2, 'Start Index Move': 3, 'Capture Encoder Value': 3, 'Stop Jog': 4, 'Stop Registration Move': 4, 'Emergency Stop': 5, 'Home': 6}
 
 class Command:
     """
     Esta clase se usa para preparar mensajes de tipo comando para los drivers AMCI.
+    Normalmente se llama este objeto y se activan ciertos atributos. 
+    Luego se transforma al formato que los drivers lo entienden usando los metodos get_bytes_to_send en caso de un mensaje explicito y get_list_to_send en caso de un mensaje implicito
     """
     def __init__(self, preset_encoder=0, run_assembled_move=0, program_assembled=0, read_assembled_data=0, reset_errors=0, preset_motor_position=0, jog_ccw=0, jog_cw=0, find_home_ccw=0, find_home_cw=0, immediate_stop=0, resume_move=0, hold_move=0, relative_move=0, absolute_move=0, enable_driver=1, virtual_encoder_follower=0, general_purpose_output_state=0, virtual_position_follower=0, backplane_proximity_bit=0, clear_driver_fault=0, assembled_move_type=0, indexed_command=0, registration_move=0, enable_electronic_gearing_mode=0, save_assembled_move=0, reverse_blend_direction=0, hybrid_control_enable=0, encoder_registration_move=0, current_key=0, desired_command_word_2=0, desired_command_word_3=0, desired_command_word_4=0, desired_command_word_5=0, desired_command_word_6=0, desired_command_word_7=0, desired_command_word_8=0, desired_command_word_9=0, name=''):
         self.desired_mode_select_bit = 0
@@ -96,6 +100,8 @@ class Command:
 class Setting:
     """
     Esta clase se usa para preparar mensajes de tipo configuración para los drivers AMCI.
+    Normalmente se llama este objeto y se activan ciertos atributos. 
+    Luego se transforma al formato que los drivers lo entienden usando los metodos get_bytes_to_send en caso de un mensaje explicito y get_list_to_send en caso de un mensaje implicito
     """
     def __init__(self, disable_anti_resonance_bit=0, enable_stall_detection_bit=0, use_backplane_proximity_bit=0, use_encoder_bit=0, home_to_encoder_z_pulse=0, input_3_function_bits=0, input_2_function_bits=0, input_1_function_bits=0, output_functionality_bit=0, output_state_control_on_network_lost=0, output_state_on_network_lost=0, read_present_configuration=0, save_configuration=0, binary_input_format=0, binary_output_format=0, binary_endian=0, input_3_active_level=0, input_2_active_level=0, input_1_active_level=0, starting_speed=50, motors_step_turn=1000, hybrid_control_gain=0, encoder_pulses_turn=1000, idle_current_percentage=30, motor_current=30, current_loop_gain=5):
         
@@ -158,9 +164,9 @@ class Setting:
         as_list = [i == '1' for i in bits_to_send]
         return as_list
 
-class VirtualAxis(Process):
+class VirtualAxis(threading.Thread):
     def __init__(self, running, interval, t0, pipe_conn, verbose=False):
-        Process.__init__(self) # Initialize the threading superclass
+        threading.Thread.__init__(self) # Initialize the threading superclass
         self.running = running
         self.ref = [(0,0,0)]
         self.last_pos = 0
@@ -168,20 +174,15 @@ class VirtualAxis(Process):
         self.t0 = t0
         self.pipe_conn = pipe_conn
         self.verbose = verbose
-        self.pos = Value('i', 0)
-        self.vel = Value('i', 0)
+        self.pos = 0
+        self.vel = 0
         
     def run(self):
-        # while self.running.is_set():
-        #     t = time.time() - self.t0
-        #     self.pos = int(200 * np.sin(2*np.pi * self.f * t))
-        #     self.vel = int(200 * 2*np.pi*self.f * np.cos(2*np.pi * self.f * t))
-        #     time.sleep(0.01)
         while self.running.is_set():
             t = time.time() - self.t0
-            self.pos.value, self.vel.value = self.get_ref(t)
+            self.pos, self.vel = self.get_ref(t)
             if self.verbose:
-                print(t, self.pos.value, self.vel.value)
+                print(t, self.pos, self.vel)
             self.update_ref(t)
             if self.pipe_conn.poll(self.interval):
                 message = self.pipe_conn.recv()
@@ -221,7 +222,7 @@ class VirtualAxis(Process):
             self.ref += new_ref
     
     def stop(self):
-        self.ref = [(0,self.pos.value,0)]
+        self.ref = [(0,self.pos,0)]
 
 class AMCIDriver(Process):
     def __init__(self, hostname, running, musician_pipe, comm_pipe, comm_data, virtual_axis_pipe, t0, connected=True, disable_anti_resonance_bit=0, enable_stall_detection_bit=0, use_backplane_proximity_bit=0, use_encoder_bit=0, home_to_encoder_z_pulse=0, input_3_function_bits=0, input_2_function_bits=0, input_1_function_bits=0, output_functionality_bit=0, output_state_control_on_network_lost=0, output_state_on_network_lost=0, read_present_configuration=0, save_configuration=0, binary_input_format=0, binary_output_format=0, binary_endian=0, input_3_active_level=0, input_2_active_level=0, input_1_active_level=0, starting_speed=1, motors_step_turn=1000, hybrid_control_gain=1, encoder_pulses_turn=1000, idle_current_percentage=30, motor_current=40, current_loop_gain=5, homing_slow_speed=200, verbose=False, virtual_axis_follow_acceleration=50, virtual_axis_follow_deceleration=50, home=True, virtual_axis_proportional_coef=1, Kp=0, Ki=5, Kd=0.01, Kp_vel=0, Ki_vel=0, Kd_vel=0):
@@ -543,15 +544,15 @@ class AMCIDriver(Process):
                 # if self.verbose:
                 #     print(data)
                 self.process_incoming_data(data)
-                self.pos_ref.value = self.virtual_axis.pos.value
-                corrected_pos, corrected_vel = self.pid_control(self.virtual_axis.pos.value, self.virtual_axis.vel.value)
+                self.pos_ref.value = self.virtual_axis.pos
+                corrected_pos, corrected_vel = self.pid_control(self.virtual_axis.pos, self.virtual_axis.vel)
                 #print(corrected_pos, corrected_vel)
                 if type(corrected_pos) == int and type(corrected_vel) == int:
                     try:
                         self.set_output(-corrected_pos, -corrected_vel)
                         #print(corrected_pos, corrected_vel, self.encoder_position, self.motor_position)
                     except:
-                        print(f'Error en referencia: {self.virtual_axis.pos.value}, {self.virtual_axis.vel.value}, {corrected_pos}, {corrected_vel}')
+                        print(f'Error en referencia: {self.virtual_axis.pos}, {self.virtual_axis.vel}, {corrected_pos}, {corrected_vel}')
                 
                 if self.musician_pipe.poll():
                     message = self.musician_pipe.recv()
@@ -575,7 +576,7 @@ class AMCIDriver(Process):
                         self.Kp_vel = message[1]['kp_vel']
                         self.Ki_vel = message[1]['ki_vel']
                         self.Kd_vel = message[1]['kd_vel']
-                        self.synchrostep_out_list = self.get_synchrostep_move_command(self.virtual_axis.pos.value, 0, speed=self.virtual_axis.vel.value, acceleration=self.acc, deceleration=self.dec, proportional_coefficient=self.virtual_axis_proportional_coef, network_delay=20, encoder=False).get_list_to_send()
+                        self.synchrostep_out_list = self.get_synchrostep_move_command(self.virtual_axis.pos, 0, speed=self.virtual_axis.vel, acceleration=self.acc, deceleration=self.dec, proportional_coefficient=self.virtual_axis_proportional_coef, network_delay=20, encoder=False).get_list_to_send()
             
             self.comm_pipe.send(["stopProduce", self.hostname, 100, 150, 110])
 
@@ -1191,7 +1192,7 @@ class FlowControllerDriver(Process):
             while self.running.is_set():
                 time.sleep(0.01)
                 self.read_input(read_output=False)
-                self.set_output(self.virtual_flow.flow.value)
+                self.set_output(self.virtual_flow.flow)
             
             self.comm_pipe.send(["stopProduce", self.hostname, 101, 100, 0x6e])
     
@@ -1257,9 +1258,9 @@ class FlowControllerDriver(Process):
     def change_kd(self, value):
         pass
 
-class VirtualFlow(Process):
+class VirtualFlow(threading.Thread):
     def __init__(self, running, interval, t0, pipe_conn, verbose=False):
-        Process.__init__(self) # Initialize the threading superclass
+        threading.Thread.__init__(self) # Initialize the threading superclass
         self.running = running
         self.ref = [(0,0)]
         self.last_pos = 0
@@ -1267,9 +1268,9 @@ class VirtualFlow(Process):
         self.t0 = t0
         self.pipe_conn = pipe_conn
         self.verbose = verbose
-        self.flow = Value("d", 0.0)
-        self.vibrato_amp = Value("d", 0.0)
-        self.vibrato_freq = Value("d", 0.0)
+        self.flow = 0.0
+        self.vibrato_amp = 0.0
+        self.vibrato_freq = 0.0
         
     def run(self):
         print("Virtual Flow running")
@@ -1281,11 +1282,11 @@ class VirtualFlow(Process):
         
         while self.running.is_set():
             t = time.time() - self.t0
-            self.flow.value = self.get_ref(t)
-            if not (type(self.flow.value) == float or type(self.flow.value) == int or type(self.flow.value) == np.float64):
-                print(type(self.flow.value), self.flow.value)
+            self.flow = self.get_ref(t)
+            if not (type(self.flow) == float or type(self.flow) == int or type(self.flow) == np.float64):
+                print(type(self.flow), self.flow)
             if self.verbose:
-                print(t, self.flow.value)
+                print(t, self.flow)
             self.update_ref(t)
             if self.pipe_conn.poll(self.interval):
                 message = self.pipe_conn.recv()
@@ -1295,8 +1296,8 @@ class VirtualFlow(Process):
                 elif message[0] == "update_ref":
                     self.update_ref(message[1])
                 elif message[0] == "merge_ref":
-                    self.vibrato_amp.value = message[2]
-                    self.vibrato_freq.value = message[3]
+                    self.vibrato_amp = message[2]
+                    self.vibrato_freq = message[3]
                     self.merge_ref(message[1])
                 elif message[0] == "stop":
                     self.stop()
@@ -1304,11 +1305,11 @@ class VirtualFlow(Process):
     def get_ref(self, t):
         if self.ref[-1][0] > t:
             ramp = get_value_from_func(t, self.ref, approx=False)
-            vibr = ramp * self.vibrato_amp.value * sin(t * 2*pi * self.vibrato_freq.value)
+            vibr = ramp * self.vibrato_amp * sin(t * 2*pi * self.vibrato_freq)
             flow = max(0,min(50, ramp+vibr))
         else:
             ramp = self.ref[-1][1]
-            vibr = ramp * self.vibrato_amp.value * sin(t * 2*pi * self.vibrato_freq.value)
+            vibr = ramp * self.vibrato_amp * sin(t * 2*pi * self.vibrato_freq)
             flow = max(0,min(50, ramp+vibr))
         return flow
 
@@ -1331,23 +1332,23 @@ class VirtualFlow(Process):
     def stop(self):
         self.ref = [(0,0)]
 
-class VirtualFingers(Process):
+class VirtualFingers(threading.Thread):
     def __init__(self, running, interval, t0, pipe_end, verbose=False):
-        Process.__init__(self) # Initialize the threading superclass self.running, 0.05, self.t0, self.ref_pipe
+        threading.Thread.__init__(self) # Initialize the threading superclass self.running, 0.05, self.t0, self.ref_pipe
         self.running = running
         self.ref = [(0,0)]
         self.t0 = t0
         self.verbose = verbose
         self.interval = interval
         self.pipe_end = pipe_end
-        self.note = Value('d', 0)
+        self.note = 0
         
     def run(self):
         while self.running.is_set():
             t = time.time() - self.t0
-            self.note.value = self.get_ref(t)
+            self.note = self.get_ref(t)
             if self.verbose:
-                print(t, self.note.value)
+                print(t, self.note)
             self.update_ref(t)
             if self.pipe_end.poll(self.interval):
                 message = self.pipe_end.recv()
@@ -1388,7 +1389,7 @@ class VirtualFingers(Process):
             self.ref += new_ref
     
     def stop(self):
-        self.ref = [(0,self.note.value)]
+        self.ref = [(0,self.note)]
 
 class PressureSensor(Process):
     def __init__(self, hostname, running, musician_pipe, comm_pipe, comm_data, connected=False, verbose=False):
@@ -1559,8 +1560,8 @@ class FingersDriver(Process):
             self.comm_pipe.send(["registerSession", self.hostname])
             time.sleep(0.1)
             while self.running.is_set():
-                time.sleep(0.01)
-                ref_note = self.virtual_fingers.note.value
+                time.sleep(0.02)
+                ref_note = self.virtual_fingers.note
                 if ref_note != last_note:
                     print("New_note")
                     #data = b'\x00\x00'
@@ -1568,28 +1569,8 @@ class FingersDriver(Process):
                     print(self.state)
                     self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state])
                     last_note = ref_note
-                    # try:
-                    #     self.request_finger_action(dict_notes[ref_note])
-                    #     self.serial_port.write(self.state)
-                    #     last_note = ref_note
-                    #     print(f'Note: {last_note}')
-                    # except:
-                    #     print("Arduino disconnected.")
 
-            # while self.running.is_set():
-            #     self.changeEvent.wait(timeout=1)
-            #     if self.changeEvent.is_set():
-
-            #         # Ejecuta acción de dedos de bajo nivel
-            #         try:
-            #             self.serial_port.write(self.state)
-            #         except:
-            #             print("Arduino disconnected.")
-            #         # Limpia el flag de cambio
-            #         self.changeEvent.clear()
-
-            # Finaliza el thread
-            servo = translate_fingers_to_servo('00000 0000')
+            servo = self.translate_fingers_to_servo('00000 0000')
             self.state = int(servo[::-1].replace(' ', ''), 2).to_bytes(2, byteorder='little')
             self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state])
 
@@ -1604,27 +1585,24 @@ class FingersDriver(Process):
 
         # Modifica el estado de servos interno según un diccionario
         if req_note in instrument_dicts[self.instrument].keys():
-            servo = translate_fingers_to_servo(instrument_dicts[self.instrument][req_note])
+            servo = self.translate_fingers_to_servo(instrument_dicts[self.instrument][req_note])
             self.state = int(servo[::-1].replace(' ', ''), 2).to_bytes(2, byteorder='little')
-
-            # Levanta el flag para generar un cambio en el Thread principal
-            #self.changeEvent.set()
         else:
             print(f'Key error: {req_note} not in dict')
 
-def translate_fingers_to_servo(note_bits):
-    """
-    Intercambia las llaves 4 y 5 por disposición geométrica.
-    - llave nueva 4 <-- llave antigua 5.
-    - llave nueva 5 <-- llave antigua 4.
-    :param note_bits:
-    :return:
-    """
-    servo_bits = list(note_bits)
-    servo_bits[3] = note_bits[4]
-    servo_bits[4] = note_bits[3]
+    def translate_fingers_to_servo(self, note_bits):
+        """
+        Intercambia las llaves 4 y 5 por disposición geométrica.
+        - llave nueva 4 <-- llave antigua 5.
+        - llave nueva 5 <-- llave antigua 4.
+        :param note_bits:
+        :return:
+        """
+        servo_bits = list(note_bits)
+        servo_bits[3] = note_bits[4]
+        servo_bits[4] = note_bits[3]
 
-    return ''.join(servo_bits)
+        return ''.join(servo_bits)
 
 class Microphone(Process):
     pad_modes = ["constant", "edge", "empty", "linear_ramp", "maximum", "mean", "median", "minimum", "reflect", "symmetric", "wrap"]
@@ -1750,49 +1728,3 @@ class Microphone(Process):
 
 if __name__ == "__main__":
     pass
-
-# if __name__ == "__main__":
-#     print(sd.query_devices())
-#     event = Event()
-#     event.set()
-#     mic_conn, child_conn = Pipe()
-#     mic = Microphone(event, child_conn, connected=True, verbose=True)
-#     mic.start()
-
-#     while True:
-#         t = input()
-#         if t == "q":
-#             event.clear()
-#             break
-#         elif t == "r":
-#             mic_conn.send(['start_saving'])
-#         elif t == "s":
-#             mic_conn.send(['finish_saving', 'C:/Users/ferna/Dropbox/UC/Magister/robot-flautista/exercises/data/escala2.wav'])
-
-    # host = "192.168.2.10"
-    # connections = ["192.168.2.102", "192.168.2.104", "192.168.2.103", "192.168.2.101", "192.168.2.100"]
-    # event = threading.Event()
-    # event.set()
-
-    # t0 = time.time()
-    # pierre = Musician(host, connections, event)
-    # pierre.start()
-
-    # while True:
-    #     t = input()
-    #     if t == "q":
-    #         event.clear()
-    #         break
-    #     elif t == "m":
-    #         desired_state = State(0,0,0,0)
-    #         desired_state.x = 0
-    #         desired_state.z = 0
-    #         desired_state.alpha = 10
-    #         pierre.move_to(desired_state, T=1.5)
-    #     elif t == 'i':
-    #         pierre.print_info()
-    #     else:
-    #         # print(C1.inAssem)
-    #         # print(C2.inAssem)
-    #         pass
-    
