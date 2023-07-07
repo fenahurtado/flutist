@@ -16,7 +16,7 @@ if __name__ == '__main__':
 
     ## 
     host = "192.168.2.10"   # dirección del pc
-    connections = ["192.168.2.102", "192.168.2.104", "192.168.2.103", "192.168.2.101", "192.168.2.100", "COM3"] # direcciones de los dispositivos
+    connections = ["192.168.2.102", "192.168.2.104", "192.168.2.103", "192.168.2.101", "192.168.2.100", "192.168.2.105"] # direcciones de los dispositivos
     event = Event()
     event.set()
 
@@ -24,7 +24,7 @@ if __name__ == '__main__':
     data = mgr.dict() # para compartir memoria entre los procesos
 
     t0 = time()
-    connect = False
+    connect = True
     ## Creamos el objeto Musico, que conecta a todos los dispositivos
     pierre = Musician(host, connections, event, pierre_pipe, data, fingers_connect=connect, x_connect=connect, z_connect=connect, alpha_connect=connect, flow_connect=connect, pressure_sensor_connect=connect, mic_connect=True)
     pierre.start()

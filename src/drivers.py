@@ -13,7 +13,6 @@ from src.cinematica import *
 import struct
 import time
 import numpy as np
-import serial
 import io
 
 INPUT_FUNCTION_BITS = {'General Purpose Input': 0, 'CW Limit': 1, 'CCW Limit': 2, 'Start Index Move': 3, 'Capture Encoder Value': 3, 'Stop Jog': 4, 'Stop Registration Move': 4, 'Emergency Stop': 5, 'Home': 6}
@@ -173,6 +172,11 @@ class VirtualAxis(Process):
         self.vel = Value('i', 0)
         
     def run(self):
+        # while self.running.is_set():
+        #     t = time.time() - self.t0
+        #     self.pos = int(200 * np.sin(2*np.pi * self.f * t))
+        #     self.vel = int(200 * 2*np.pi*self.f * np.cos(2*np.pi * self.f * t))
+        #     time.sleep(0.01)
         while self.running.is_set():
             t = time.time() - self.t0
             self.pos.value, self.vel.value = self.get_ref(t)
@@ -580,7 +584,15 @@ class AMCIDriver(Process):
         CV = self.encoder_position.value
         e = SP-CV
         MV_P = self.Kp*e
-        if ref_vel <= 3:
+
+        SP_vel = ref_vel
+        CV_vel = (CV - self.last_pos) / self.Ts
+        e_vel = SP_vel-CV_vel
+        MV_P_vel = self.Kp_vel*e_vel
+        MV_I_vel = self.MV_I0_vel + self.Ki_vel*self.Ts*e_vel - self.Ka_vel*self.sat(self.MV_vel,self.MV_low_vel,self.MV_high_vel)
+        MV_D_vel = self.Kd_vel*(e_vel-self.e0_vel)/self.Ts
+
+        if abs(ref_vel) <= 3 and abs(SP_vel) <= 10:
             MV_I = self.MV_I0 + 10*self.Ts*e - self.Ka*self.sat(self.MV,self.MV_low,self.MV_high)
         else:
             MV_I = 0 #self.MV_I0 + 0*self.Ts*e - self.Ka*self.sat(self.MV,self.MV_low,self.MV_high)
@@ -590,12 +602,7 @@ class AMCIDriver(Process):
         self.e0 = e
         self.MV_I0 = MV_I
 
-        SP_vel = ref_vel
-        CV_vel = (CV - self.last_pos) / self.Ts
-        e_vel = SP_vel-CV_vel
-        MV_P_vel = self.Kp_vel*e_vel
-        MV_I_vel = self.MV_I0_vel + self.Ki_vel*self.Ts*e_vel - self.Ka_vel*self.sat(self.MV_vel,self.MV_low_vel,self.MV_high_vel)
-        MV_D_vel = self.Kd_vel*(e_vel-self.e0_vel)/self.Ts
+        
         #print(MV_P, MV_I, MV_D)
         self.MV_vel = int(round(SP_vel + MV_P_vel + MV_I_vel + MV_D_vel, 0))
         self.e0_vel = e_vel
@@ -1519,7 +1526,7 @@ instrument_dicts = {'flute': flute_dict,
                     'test':  test_dict}
 
 class FingersDriver(Process):
-    def __init__(self, host, running, pipe_end, ref_pipe, t0, connected=True, instrument='flute', verbose=False):
+    def __init__(self, hostname, running, pipe_end, ref_pipe, t0, comm_pipe, connected=True, instrument='flute', verbose=False):
         # Variables de threading
         Process.__init__(self)
         self.running = running
@@ -1528,25 +1535,19 @@ class FingersDriver(Process):
         self.t0 = t0
         self.connected = connected
         self.verbose = verbose
-        self.host = host
+        self.hostname = hostname
+        self.comm_pipe = comm_pipe
         
         # Variables de músico
         self.instrument = instrument
         self.note_dict = instrument_dicts[instrument]
         self.state = '000000000'
 
-        # Configura evento de cambio
-        # self.changeEvent = Event()
-        # self.changeEvent.clear()
-
-        # Configura comunicación serial
+        if self.connected:
+            self.comm_pipe.send(["explicit_conn", self.hostname, 2*8, 1*8, 1, 2, ethernetip.EtherNetIP.ENIP_IO_TYPE_INPUT, 101, ethernetip.EtherNetIP.ENIP_IO_TYPE_OUTPUT, 100])
         
 
     def run(self):
-        print("Connecting to fingers serial port...")
-        if self.connected:
-            self.serial_port = serial.Serial(self.host, 115200, timeout=1)
-        print("Serial port connected")
 
         print("Running finger driver...")
         self.virtual_fingers = VirtualFingers(self.running, 0.05, self.t0, self.ref_pipe, verbose=False)
@@ -1555,18 +1556,25 @@ class FingersDriver(Process):
         self.pipe_end.send(["finger_driver_started"])
 
         if self.connected:
+            self.comm_pipe.send(["registerSession", self.hostname])
+            time.sleep(0.1)
             while self.running.is_set():
                 time.sleep(0.01)
                 ref_note = self.virtual_fingers.note.value
                 if ref_note != last_note:
                     print("New_note")
-                    try:
-                        self.request_finger_action(dict_notes[ref_note])
-                        self.serial_port.write(self.state)
-                        last_note = ref_note
-                        print(f'Note: {last_note}')
-                    except:
-                        print("Arduino disconnected.")
+                    #data = b'\x00\x00'
+                    self.request_finger_action(dict_notes[ref_note])
+                    print(self.state)
+                    self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state])
+                    last_note = ref_note
+                    # try:
+                    #     self.request_finger_action(dict_notes[ref_note])
+                    #     self.serial_port.write(self.state)
+                    #     last_note = ref_note
+                    #     print(f'Note: {last_note}')
+                    # except:
+                    #     print("Arduino disconnected.")
 
             # while self.running.is_set():
             #     self.changeEvent.wait(timeout=1)
@@ -1582,18 +1590,11 @@ class FingersDriver(Process):
 
             # Finaliza el thread
             servo = translate_fingers_to_servo('00000 0000')
-            self.state = int(servo.replace(' ', ''), 2).to_bytes(2, byteorder='big')
-            self.serial_port.write(self.state)
+            self.state = int(servo[::-1].replace(' ', ''), 2).to_bytes(2, byteorder='little')
+            self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state])
 
             time.sleep(0.1)
-
-            self.stop()
-            self.serial_port.close()
             print('Fingers Driver thread killed')
-
-    def stop(self):
-        # Suelta todas las llaves
-        self.serial_port.write(b'\0\0')
 
     def request_finger_action(self, req_note: str):
         """
@@ -1604,7 +1605,7 @@ class FingersDriver(Process):
         # Modifica el estado de servos interno según un diccionario
         if req_note in instrument_dicts[self.instrument].keys():
             servo = translate_fingers_to_servo(instrument_dicts[self.instrument][req_note])
-            self.state = int(servo.replace(' ', ''), 2).to_bytes(2, byteorder='big')
+            self.state = int(servo[::-1].replace(' ', ''), 2).to_bytes(2, byteorder='little')
 
             # Levanta el flag para generar un cambio en el Thread principal
             #self.changeEvent.set()

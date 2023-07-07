@@ -390,6 +390,15 @@ class Window(QMainWindow, PlotWindow):
         of = - (xf - x) * sin(alpha) + (zf - z) * cos(alpha)
         return l, theta*180/pi, of
     
+    def ps_play_tune(self):
+        t0 = time()
+        for note in self.route5["notes"]:
+            while self.ps_playing_tune.is_set():
+                if time() - t0 >= note[0]:
+                    self.musician_pipe.send(['execute_fingers_action', dict_notes_rev[note[1]], False])
+                    break
+                sleep(0.01)
+
     def psmove(self):
         # Ejecutar el programa C precompilado
         #process = subprocess.call("C:/Users/ferna/Documents/psmoveapi/build-x64/psmove.exe test-tracker", stdout=subprocess.PIPE)
@@ -398,7 +407,7 @@ class Window(QMainWindow, PlotWindow):
         self.ps_l_hist = self.data['radius'][-1]*np.ones([1000])
         self.ps_theta_hist = self.data['theta'][-1]*np.ones([1000])
         self.ps_of_hist = self.data['offset'][-1]*np.ones([1000])
-
+        self.ps_playing_tune = threading.Event()
         Fs = 100
         fp = 0.05
         fs = 0.1
@@ -409,7 +418,16 @@ class Window(QMainWindow, PlotWindow):
         self.ps_A = [1] +  [0 for i in range(n-1)]
 
         # self.ps_w, self.ps_gd = signal.group_delay((self.ps_flt, self.ps_A), fs=Fs)
-        
+        self.ps_playing = False
+        self.ps_last_Btn_MOVE = False
+        self.ps_last_Btn_CROSS = False
+        self.ps_last_Btn_CIRCLE = False
+        self.ps_melodia = []
+        for note in self.route5["notes"]:
+            self.ps_melodia.append(note[1])
+        self.ps_melodia_index = 0
+        if len(self.ps_melodia):
+            self.musician_pipe.send(['execute_fingers_action', dict_notes_rev[self.ps_melodia[self.ps_melodia_index]], False])
         while self.process_running.is_set():
             # Leer la salida del programa C
             output = process.stdout.readline().decode("utf-8").strip()
@@ -445,6 +463,23 @@ class Window(QMainWindow, PlotWindow):
                 self.ps_Btn_MOVE = botones & 1 << 19 != 0
                 self.ps_Btn_T = botones & 1 << 20 != 0
 
+                if self.ps_Btn_MOVE and not self.ps_last_Btn_MOVE:
+                    self.ps_playing = not self.ps_playing
+                if self.ps_Btn_CIRCLE and not self.ps_last_Btn_CIRCLE:
+                    if self.ps_playing_tune.is_set():
+                        self.ps_playing_tune.clear()
+                    else:
+                        self.ps_playing_tune.set()
+                        thread2 = threading.Thread(target=self.ps_play_tune)
+                        thread2.start()
+                if self.ps_Btn_CROSS and not self.ps_last_Btn_CROSS:
+                    self.ps_melodia_index = (self.ps_melodia_index + 1) % len(self.ps_melodia)
+                    if len(self.ps_melodia):
+                        self.musician_pipe.send(['execute_fingers_action', dict_notes_rev[self.ps_melodia[self.ps_melodia_index]], False])
+                
+                self.ps_last_Btn_MOVE = self.ps_Btn_MOVE
+                self.ps_last_Btn_CROSS = self.ps_Btn_CROSS
+                self.ps_last_Btn_CIRCLE = self.ps_Btn_CIRCLE
                 #self.request_gui_update.emit()
             elif palabras[0] == "state2":
                 if palabras[1] == self.ps_serial1:
@@ -460,13 +495,14 @@ class Window(QMainWindow, PlotWindow):
                         self.ps_x2 = float(palabras[3])
                         self.ps_y2 = float(palabras[4])
                         self.ps_r2 = float(palabras[5])
-
-            if self.ps_tracked1 and self.ps_tracked2 and self.ps_Btn_MOVE:
+            if self.ps_tracked1 and self.ps_tracked2 and self.ps_playing:
                 flow = self.ps_trigger_v*50
+                if self.ps_Btn_SQUARE:
+                    flow += flow*0.1*np.sin(2*np.pi*5*time())
                 alpha = -self.ps_accel_y*45
                 l, theta, of = self.get_l_theta_of_ps(self.ps_x1,self.ps_y1,alpha,self.ps_x2,self.ps_y2)
-                of = of/30
-                l  = max(0,l-20) / 10
+                of = of/25
+                l  = max(0,l-20) / 25
 
                 self.ps_theta_hist = np.hstack([self.ps_theta_hist[1:], theta])
                 theta_filtrado = signal.lfilter(self.ps_flt, self.ps_A, self.ps_theta_hist)
@@ -481,6 +517,7 @@ class Window(QMainWindow, PlotWindow):
                 self.ps_theta_hist = np.hstack([self.ps_theta_hist[1:], self.ps_theta_hist[-1]])
                 self.ps_l_hist = np.hstack([self.ps_l_hist[1:], self.ps_l_hist[-1]])
                 self.ps_of_hist = np.hstack([self.ps_of_hist[1:], self.ps_of_hist[-1]])
+            
 
         # Esperar a que el proceso C termine
         process.kill()
@@ -2822,9 +2859,9 @@ if __name__ == "__main__":
     s.location_on_the_screen()
     s.show()
 
-    from drivers import Musician
+    from drivers_connect import Musician
     host = "192.168.2.10"
-    connections = ["192.168.2.102", "192.168.2.104", "192.168.2.103", "192.168.2.101", "192.168.2.100", "COM3"]
+    connections = ["192.168.2.102", "192.168.2.104", "192.168.2.103", "192.168.2.101", "192.168.2.100", "192.168.2.105"]
     event = Event()
     event.set()
 
@@ -2833,7 +2870,7 @@ if __name__ == "__main__":
     
     t0 = time()
     connect = True
-    pierre = Musician(host, connections, event, pierre_pipe, data, fingers_connect=False, x_connect=True, z_connect=True, alpha_connect=connect, flow_connect=connect, pressure_sensor_connect=connect, mic_connect=True)
+    pierre = Musician(host, connections, event, pierre_pipe, data, fingers_connect=connect, x_connect=connect, z_connect=connect, alpha_connect=connect, flow_connect=connect, pressure_sensor_connect=connect, mic_connect=True)
     pierre.start()
 
     # x_driver_started z_driver_started alpha_driver_started memory_started microphone_started flow_driver_started pressure_sensor_started finger_driver_started

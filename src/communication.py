@@ -22,6 +22,17 @@ class CommunicationCenter(Process):
         self.verbose = verbose
         self.connect = connect
     
+    def send_setAttrSingle(self, C1, data, device, dir1, dir2, dir3):
+        try:
+            r = C1.setAttrSingle(dir1, dir2, dir3, data)
+            if r is None:
+                raise Exception
+        except:
+            C1 = self.EIP.explicit_conn(device)
+            C1.registerSession()
+            r = C1.setAttrSingle(dir1, dir2, dir3, data)
+        return C1
+    
     def run(self):
         self.EIP.startIO() # inicio de la comunicación. Es importante pararla al final.
         while self.event.is_set(): # se usa un evento que al cerrar la aplicacion permite terminar este proceso
@@ -78,8 +89,7 @@ class CommunicationCenter(Process):
                     del self.connections[message[1]]
                 
                 elif message[0] == "setAttrSingle":
-                    # para enviar un mensaje explicito
-                    self.connections[message[1]].setAttrSingle(message[2], message[3], message[4], message[5])
+                    self.connections[message[1]] = self.send_setAttrSingle(self.connections[message[1]], message[5], message[1], message[2], message[3], message[4])
                 
                 elif message[0] == "getAttrSingle":
                     # para leer un atributo con comunicación explicita
