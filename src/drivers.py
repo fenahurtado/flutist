@@ -1500,22 +1500,24 @@ instrument_dicts = {'flute': flute_dict,
                     'test':  test_dict}
 
 class FingersDriver(Process):
+    """
+    Esta clase interactua con el controlador de los dedos. Define los mensajes a enviar (que actuadores activar).
+    """
     def __init__(self, hostname, running, pipe_end, ref_pipe, t0, comm_pipe, connected=True, instrument='flute', verbose=False):
-        # Variables de threading
         Process.__init__(self)
         self.running = running
-        self.pipe_end = pipe_end
-        self.ref_pipe = ref_pipe
+        self.pipe_end = pipe_end # pipe que conecta al musico
+        self.ref_pipe = ref_pipe # pipe que conecta a los dedos virtuales
         self.t0 = t0
         self.connected = connected
         self.verbose = verbose
         self.hostname = hostname
-        self.comm_pipe = comm_pipe
+        self.comm_pipe = comm_pipe # pipe que conecta a la central de comunicacion
         
         # Variables de músico
-        self.instrument = instrument
+        self.instrument = instrument #instrumento seleccionado. Define el diccionario a usar y las llaves disponibles
         self.note_dict = instrument_dicts[instrument]
-        self.state = '000000000'
+        self.state = '000000000' 
 
         if self.connected:
             self.comm_pipe.send(["explicit_conn", self.hostname, 2*8, 1*8, 1, 2, ethernetip.EtherNetIP.ENIP_IO_TYPE_INPUT, 101, ethernetip.EtherNetIP.ENIP_IO_TYPE_OUTPUT, 100])
@@ -1523,26 +1525,24 @@ class FingersDriver(Process):
 
     def run(self):
 
-        print("Running finger driver...")
         self.virtual_fingers = VirtualFingers(self.running, 0.05, self.t0, self.ref_pipe, verbose=False)
         self.virtual_fingers.start()
         last_note = -1
-        self.pipe_end.send(["finger_driver_started"])
+        self.pipe_end.send(["finger_driver_started"]) ## avisamos que el driver esta funcionando (para saltar el start-up menu)
 
         if self.connected:
             self.comm_pipe.send(["registerSession", self.hostname])
             time.sleep(0.1)
+            ## loop en el que queda por el resto del programa
             while self.running.is_set():
-                time.sleep(0.02)
-                ref_note = self.virtual_fingers.note
-                if ref_note != last_note:
-                    print("New_note")
-                    #data = b'\x00\x00'
+                time.sleep(0.02) # tasa de actualizacion. Es un poco mayor a la de los demas procesos
+                ref_note = self.virtual_fingers.note # actualiza la nota que debería tocar
+                if ref_note != last_note: # si es distinta a la anterior (que ya estaba digitada), envia un mensaje al controlador de los dedos con la nueva digitación para que la actualice
                     self.request_finger_action(dict_notes[ref_note])
-                    print(self.state)
-                    self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state])
+                    self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state]) # a diferencia de los otros drivers, como los cambios de nota son menos frecuentes, se usa la mensajería explicita
                     last_note = ref_note
 
+            # antes de cerrar el programa se abren todas las llaves para acceder más facil a la flauta en caso de que quiera ser removida. Tambien funciona por seguridad para que no se gasten las gomas de las llaves si se dejan mucho tiempo cerradas
             servo = self.translate_fingers_to_servo('00000 0000')
             self.state = int(servo[::-1].replace(' ', ''), 2).to_bytes(2, byteorder='little')
             self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state])
@@ -1578,71 +1578,62 @@ class FingersDriver(Process):
         return ''.join(servo_bits)
 
 class Microphone(Process):
+    """
+    Lee, filtra, interpreta y graba la informacion recibida desde el microfono
+    """
     pad_modes = ["constant", "edge", "empty", "linear_ramp", "maximum", "mean", "median", "minimum", "reflect", "symmetric", "wrap"]
+    # opciones de pad para la deteccion de pitch con algoritmo YIN o pYIN
     def __init__(self, running, end_pipe, device, method, yin_settings, pyin_settings, mic_running, connected=False, verbose=False):
         Process.__init__(self)
         self.running = running
         self.connected = connected
         self.verbose = verbose
-        self.device = device
-        self.method = method
+        self.device = device # microfono a usar. Puede ser cambiado por el usuario
+        self.method = method # metodo de deteccion de pitch a usar: YIN o pYIN
         self.yin_settings = yin_settings
         self.pyin_settings = pyin_settings
-        self.end_pipe = end_pipe
+        self.end_pipe = end_pipe # pipe que conecta con el musico
         self.pitch = Value('d', 0.0)
-        self.sr = 44100
-        self.max_num_points = int(self.sr*0.1)
-        self.last_mic_data = np.array([])
-        self.last = []
-        self.flt = signal.remez(121, [0, 50, 240, int(self.sr/2)], [0, 1], fs=self.sr)
-        self.A = [1] +  [0 for i in range(77-1)]
-        fo = 12800
-        l  = 0.995
-        self.B2  = [1, -2*np.cos(2*np.pi*fo/self.sr), 1]
-        self.A2  = [1, -2*l*np.cos(2*np.pi*fo/self.sr), l**2]
-        self.saving = False
-        self.mic_data = np.array([])
-        self.print_i = 0
+        self.sr = 44100 # sample rate
+        self.max_num_points = int(self.sr*0.1) # puntos que usa para la detección de pitch. 
+        self.last_mic_data = np.array([]) # array con la info escuchada mas recientemente, donde se mantienen self.max_num_points valores
+        self.saving = False # bool para grabar 
+        # self.mic_data = np.array([])
         self.mic_running = mic_running
         self.mic_running.set()
-        self.buffer = io.BytesIO()
+        self.buffer = io.BytesIO() # buffer para guardar el audio grabado
 
-    def micCallback(self, indata, frames, time, status):
+    def micCallback(self, indata, frames, time, status): # se llama esta funcion en cada actualización de la informacion escuchada por el microfono
         if status:
             print('Status:', status)
-        #senal_filtrada1 = signal.lfilter(self.flt, self.A, indata)
-        #senal_filtrada2 = signal.lfilter(self.B2, self.A2, senal_filtrada1)
+        # actualizamos la ultima informacion escuchada, truncuando los ultimos self.max_num_points puntos
         self.last_mic_data = np.hstack((self.last_mic_data, np.transpose(indata)[0]))
         self.last_mic_data = self.last_mic_data[-self.max_num_points:]
-        if self.saving:
+        if self.saving: # si estamos grabando escribimos la info nueva en el buffer
             self.buffer.write(indata.copy())
-            #self.mic_data = np.hstack((self.mic_data, np.transpose(indata)[0]))
 
-    def start_saving(self):
-        #print("Grabando...")
-        self.mic_data = np.array([])
+    def start_saving(self): # para empezar a grabar
+        # self.mic_data = np.array([])
         self.saving = True
     
-    def pause_saving(self):
+    def pause_saving(self): # para pausar la grabacion
         self.saving = False
 
-    def resume_saving(self):
+    def resume_saving(self): # para resumir la grabacion
         self.saving = True
     
-    def finish_saving(self, file_name):
+    def finish_saving(self, file_name): # para finalizar la grabacion y guardar el archivo
         self.saving = False_
         self.buffer.seek(0)
         deserialized_bytes = np.frombuffer(self.buffer.read(), dtype=np.float32)
         write(file_name, self.sr, deserialized_bytes)
-        self.buffer.truncate(0)
-        #write(file_name, self.sr, self.mic_data)
-        #self.data.to_csv(file_name)
+        self.buffer.truncate(0) # reseteamos el buffer
 
     def handle_messages(self):
-        if self.end_pipe.poll(0.05):
+        if self.end_pipe.poll(0.05): # revisa si hay alguna instruccion de otro proceso. Si no recibe nada en 0.05 ms avanza
             message = self.end_pipe.recv()
-            print("Message received in microphone", message)
-            if message[0] == 'start_saving':
+            # print("Message received in microphone", message)
+            if message[0] == 'start_saving': # para empezar a grabar
                 self.start_saving()
             elif message[0] == 'pause_saving':
                 self.pause_saving()
@@ -1653,7 +1644,7 @@ class Microphone(Process):
             elif message[0] == 'save_recorded_data':
                 self.finish_saving(message[1])
                 print("Audio saved to file", message[1])
-            elif message[0] == 'change_frequency_detection':
+            elif message[0] == 'change_frequency_detection': # para hacer cambios en la configuracion. Desde un cambio de microfono a un cambio en la configuracion de la deteccion de pitch
                 if self.device != message[1]['device']:
                     self.mic_running.clear()
                 self.device = message[1]['device']
@@ -1663,12 +1654,12 @@ class Microphone(Process):
 
     def detect_pitch(self):
         pitch = 0
-        if self.method == 0:
+        if self.method == 0: # si se usa el metodo YIN
             try:
                 pitch = yin(self.last_mic_data, sr=self.sr, fmin=self.yin_settings['fmin'], frame_length=self.yin_settings['frame_length'], fmax=self.yin_settings['fmax'], trough_threshold=self.yin_settings['trough_threshold'], center=self.yin_settings['center'], hop_length=self.yin_settings['hop_length'], win_length=self.yin_settings['win_length'], pad_mode=Microphone.pad_modes[self.yin_settings['pad_mode']])[-1] 
             except:
-                pitch = 0
-        else:
+                pitch = 0 # si falla la deteccion se dice que el pitch es 0
+        else:  # si se usa el metodo pYIN
             try:
                 if self.pyin_settings['fill_na'] == 0:
                     pitch = pyin(self.last_mic_data, sr=self.sr, fmin=self.pyin_settings['fmin'], fmax=self.pyin_settings['fmax'], frame_length=self.pyin_settings['frame_length'], win_length=self.pyin_settings['win_length'], hop_length=self.pyin_settings['hop_length'], n_thresholds=self.pyin_settings['n_threshold'], beta_parameters=(self.pyin_settings['beta_parameter_a'], self.pyin_settings['beta_parameter_b']), boltzmann_parameter=self.pyin_settings['boltzmann_parameter'], resolution=self.pyin_settings['resolution'], max_transition_rate=self.pyin_settings['max_transition_rate'], switch_prob=self.pyin_settings['switch_prob'], no_trough_prob=self.pyin_settings['no_trough_prob'], fill_na=None, center=self.pyin_settings['center'], pad_mode=Microphone.pad_modes[self.pyin_settings['pad_mode']])[0][-1]
@@ -1683,18 +1674,15 @@ class Microphone(Process):
         self.pitch.value = pitch
 
     def run(self):
-        self.end_pipe.send(["microphone_started"])
+        self.end_pipe.send(["microphone_started"]) ## avisamos que el driver esta funcionando (para saltar el start-up menu)
         if self.connected:
-            print(sd.query_devices())
-            while self.running.is_set():
+            #print(sd.query_devices())
+            while self.running.is_set(): # se crean dos loops, con dos eventos. self.running es el de mayor jerarquia, que se mantiene durante toda la duracion del programa. self.mic_running en cambio se mantiene mientras no haya cambios de microfono. Asi si el usuario decide usar un microfono distinto es posible cambiarlo sin tener que reiniciar el programa.
                 self.mic_running.set()
-                print("Beginning input stream with device", self.device)
                 with sd.InputStream(samplerate=self.sr, channels=1, callback=self.micCallback, device=self.device, latency='high'):#,  blocksize=300000): #, latency='high'
-                    while self.mic_running.is_set():
-                        self.handle_messages()
-                        self.detect_pitch()
-                        #senal_filtrada1 = signal.lfilter(self.flt, self.A, self.last_mic_data)
-                        #senal_filtrada2 = signal.lfilter(self.B2, self.A2, senal_filtrada1)
+                    while self.mic_running.is_set(): # se mantiene en este loop mientras no cambie el microfono o se cierre la aplicacion
+                        self.handle_messages() # revisa si hay alguna instruccion de otro proceso
+                        self.detect_pitch() # hace la deteccion de pitch
 
                 
             print("Mic thread killed")
