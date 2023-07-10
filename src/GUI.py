@@ -317,34 +317,32 @@ class Window(QMainWindow, PlotWindow):
         self.seeMotorRefsButton.clicked.connect(self.see_motor_refs) # para visualizar las referencias en el espacio de las junturas. Esta funcion abre una ventana especial con los graficos de las posiciones y velocidades para cada motor a partir de la partitura que se escribió.
         self.manualControlButton.clicked.connect(self.open_manual_control) # para abrir la ventana que tiene los controles para mover el robot manualmente. 
         self.psControlButton.clicked.connect(self.ps_control) # ejecuta el script para usar los controles de ps_move
-        self.softStopButton.clicked.connect(self.soft_stop)
-        self.process_running = Event()
+        self.softStopButton.clicked.connect(self.soft_stop) # soft stop de los motores 
+        self.process_running = Event() # se usa este evento mientras se corre el script de ps move
+        ## se crean algunas variables para leer la informacion obtenida del script de ps move
         self.ps_serial1 = ""
         self.ps_tracked1 = False
         self.ps_serial2 = ""
         self.ps_tracked2 = False
 
-        self.actionNew.triggered.connect(self.new_file)
-        self.actionSave.triggered.connect(self.save)
-        self.actionSave_as.triggered.connect(self.save_as)
-        self.actionOpen.triggered.connect(self.open)
-
-        #self.checkPathButton.clicked.connect(self.check_path)
-        self.goToCoursorButton.clicked.connect(self.go_to_coursor)
-        self.playButton.clicked.connect(self.play)
-        self.stopButton.clicked.connect(self.stop)
-        self.stop_playing.connect(self.stop)
-        self.refresh_plots_signal.connect(self.refresh_plots)
-        self.clearPlotButton.clicked.connect(self.clear_plot)
+        ## conectamos otras funciones
+        self.actionNew.triggered.connect(self.new_file) # archivo nuevo
+        self.actionSave.triggered.connect(self.save) # guardar archivo
+        self.actionSave_as.triggered.connect(self.save_as) # guardar como
+        self.actionOpen.triggered.connect(self.open) # abrir
+        self.goToCoursorButton.clicked.connect(self.go_to_coursor) # mueve el robot a la posicion que se indica con el cursor (las lineas verticales en los graficos)
+        self.playButton.clicked.connect(self.play) # empieza a tocar una partitura. Solo esta activado cuando el robot se encuentra en la posicion indicada por el cursor
+        self.stopButton.clicked.connect(self.stop) # detiene la ejecucion de una partitura. Solo se activa mientras se este tocando una partitura
+        self.stop_playing.connect(self.stop) # conectamos la señal stop_playing que se emite cuando la partitura llegó hasta el final (la emite un thread diferente al thread principal)
+        self.refresh_plots_signal.connect(self.refresh_plots) # conectamos la señal refresh_plots_signal que se emite cuando se tienen que actualizar uno o varios gráficos desde un thread distinto al principal
+        self.clearPlotButton.clicked.connect(self.clear_plot) # para limpiar un grafico (borrar las mediciones obtenidas durante una ejecucion)
         self.clearPlotButton.setEnabled(False)
-        self.r_error_funcs = []
-        self.theta_error_funcs = []
-        self.offset_error_funcs = []
 
-        self.base_path = os.path.dirname(os.path.realpath(__file__))
-        self.filename = None
-        self.find_recent_files()
+        self.base_path = os.path.dirname(os.path.realpath(__file__)) # ubicacion del archivo dentro del sistema de archivos del computador
+        self.filename = None # nombre con el que se guarda una partitura
+        self.find_recent_files() # lee el archivo de recent_saves.txt para poblar el menu de archivos abiertos recientemente
 
+        ## conectamos las acciones que se encuentran en el menu Plot. Cada una de estas abre una ventana que se actualiza en tiempo real con cada una de las mediciones que corresponda
         self.actionLip_to_edge_distance.triggered.connect(self.measure_radius)
         self.actionIncident_angle.triggered.connect(self.measure_theta)
         self.actionOffset.triggered.connect(self.measure_offset)
@@ -358,28 +356,31 @@ class Window(QMainWindow, PlotWindow):
         self.actionZ.triggered.connect(self.measure_z_position)
         self.actionAlpha.triggered.connect(self.measure_alpha_position)
 
+        ## algunas variables para el manejo de versiones (poder hacer undo y redo)
         self.undo_list = []
         self.redo_list = []
-        self.actionUndo.triggered.connect(self.undo)
-        self.actionRedo.triggered.connect(self.redo)
-        self.space_of_instruction = 0
+        self.actionUndo.triggered.connect(self.undo) # Estas tambien estan conectadas con los atajos cntrl+z y cntrl+y
+        self.actionRedo.triggered.connect(self.redo) #
+
+        ## Algunas variables para definir el espacio de instruccion. Normalemente los gráficos representan l, theta y offset; pero se pueden cambiar a x, z y alpha.
+        self.space_of_instruction = 0 # 0 = espacio de la tarea, 1 = espacio de las junturas
         self.actionChange_to_joint_space.triggered.connect(self.change_to_joint_space)
         self.actionChange_to_task_space.triggered.connect(self.change_to_task_space)
 
-        self.actionSettings.triggered.connect(self.change_settings)
+        ## conectamos la accion de abrir ajustes
+        self.actionSettings.triggered.connect(self.change_settings) # esto abre un formulario con todos los ajustes posibles
 
-        #self.noteComboBox.addItems(list(dict_notes.values()))
-
-        self.populate_graph()
-        r = self.get_copy_of_routes(self.route, self.route2, self.route3, self.route4, self.route5)
+        self.populate_graph() # creamos una version inicial de las trayectorias
+        r = self.get_copy_of_routes(self.route, self.route2, self.route3, self.route4, self.route5) # creamos una copia del estado actual de las rutas para cada eje y la almacenamos en la lista de los estados para hacer undo.
         self.undo_list.append(r)
         
+        # Actualizamos los gráficos los graficos
         self.refresh_plots_signal.emit([1,2,3,4,5])
 
         self.setWindowTitle("Pierre - Flutist Robot")
-        self.file_saved = True
+        self.file_saved = True # esta variable se hace falsa cuando el archivo es modificado. Entonces se agrega un asterisco al titulo de la ventana y antes de cerrar o abrir otra partitura se pregunta al usuario si quiere guardar los cambios
     
-    def refresh_plots(self, plot_list):
+    def refresh_plots(self, plot_list): # se ejecuta cuando se emite la señal refresh_plots_signal, simplemente llama las 6 funciones que plotean en los graphicViews.
         if 2 in plot_list:
             self.reprint_plot_2()
         if 3 in plot_list:
@@ -391,23 +392,22 @@ class Window(QMainWindow, PlotWindow):
         if 1 in plot_list:
             self.reprint_plot_1()
         if 'r' in plot_list:
-            self.reprint_real_func()
+            self.reprint_real_func() # esta plotea las curvas de las mediciones reales
 
-    def get_copy_of_routes(self, r1, r2, r3, r4, r5):
+    def get_copy_of_routes(self, r1, r2, r3, r4, r5): # entrega copias de los diccionarios para almacenar versiones de los estados. Se hacen copias para que no se alteren cuando se realizan cambios y se pueda volver atras
         r1_copy = {'total_t': r1['total_t'], 'Fs': r1['Fs'], 'points': r1['points'].copy(), 'filters': r1['filters'].copy(), 'vibrato': r1['vibrato'].copy(), 'history': r1['history'].copy()}
         r2_copy = {'total_t': r2['total_t'], 'Fs': r2['Fs'], 'points': r2['points'].copy(), 'filters': r2['filters'].copy(), 'vibrato': r2['vibrato'].copy(), 'history': r2['history'].copy()}
         r3_copy = {'total_t': r3['total_t'], 'Fs': r3['Fs'], 'points': r3['points'].copy(), 'filters': r3['filters'].copy(), 'vibrato': r3['vibrato'].copy(), 'history': r3['history'].copy()}
         r4_copy = {'total_t': r4['total_t'], 'Fs': r4['Fs'], 'points': r4['points'].copy(), 'filters': r4['filters'].copy(), 'vibrato': r4['vibrato'].copy(), 'history': r4['history'].copy()}
         r5_copy = {'total_t': r5['total_t'], 'Fs': r5['Fs'], 'notes': r5['notes'].copy(), 'trill': r5['trill'].copy(), 'history': r5['history'].copy()}
         return [r1_copy, r2_copy, r3_copy, r4_copy, r5_copy]
-        #print(len(self.undo_list), len(self.redo_list))
 
-    def ps_control(self):
+    def ps_control(self): # se ejecuta al presionar el boton de PS Control, e inicia un thread.
         self.process_running.set()
         thread = threading.Thread(target=self.psmove)
         thread.start()
 
-    def get_l_theta_of_ps(self, x,z,alpha,xf,zf):
+    def get_l_theta_of_ps(self, x,z,alpha,xf,zf): # obtiene l, theta y offset a partir de x,z,alpha,xf,zf. Copia de funcion que se tiene en cinematica.py
         alpha_f = pi/4
         alpha = alpha * pi / 180
         theta = alpha + alpha_f
@@ -415,34 +415,37 @@ class Window(QMainWindow, PlotWindow):
         of = - (xf - x) * sin(alpha) + (zf - z) * cos(alpha)
         return l, theta*180/pi, of
     
-    def ps_play_tune(self):
+    def ps_play_tune(self): # se ejecuta como un thread para cambiar notas de forma automatica (se usan las notas entregadas en la partitura)
         t0 = time()
         for note in self.route5["notes"]:
-            while self.ps_playing_tune.is_set():
-                if time() - t0 >= note[0]:
+            while self.ps_playing_tune.is_set(): # si el usuario decide dejar de tocar la cancion puede apretar cuadrado y se limpia este evento
+                if time() - t0 >= note[0]: # si el tiempo actual es mayor al tiempo de la nota que toca, se envia la instruccion de digitar tal nota
                     self.musician_pipe.send(['execute_fingers_action', dict_notes_rev[note[1]], False])
-                    break
+                    break # se sale del loop while y avanzamos a la siguiente nota.
                 sleep(0.01)
 
     def psmove(self):
-        # Ejecutar el programa C precompilado
-        #process = subprocess.call("C:/Users/ferna/Documents/psmoveapi/build-x64/psmove.exe test-tracker", stdout=subprocess.PIPE)
-        process = subprocess.Popen("C:/Users/ferna/Documents/psmoveapi/build-x64/psmove.exe test-tracker", stdout=subprocess.PIPE)
+        # Ejecutar el programa en C precompilado.
+        # Ver documentación de psmoveapi para ver como compilar estos ejecutables. Los codigos fueron clonados de su github y modificados localmente. En /src/psmovapi se encuentran los scripts con los cambios
+        process = subprocess.Popen("C:/Users/ferna/Documents/psmoveapi/build-x64/psmove.exe test-tracker", stdout=subprocess.PIPE) # ejecutamos el programa precompilado
         
+        # Creamos unos arreglos con los ultimos valores de l, theta y offset. Esto lo hacemos para usar filtros y evitar movimientos muy temblorosos por el ruido de las señales.
         self.ps_l_hist = self.data['radius'][-1]*np.ones([1000])
         self.ps_theta_hist = self.data['theta'][-1]*np.ones([1000])
         self.ps_of_hist = self.data['offset'][-1]*np.ones([1000])
-        self.ps_playing_tune = threading.Event()
+        
+        # parametros del filtro
         Fs = 100
         fp = 0.05
         fs = 0.1
         fc = (fp+fs)/2
         n  = 100
-
         self.ps_flt = signal.firwin(numtaps=n, cutoff=fc, window="hamming", pass_zero="lowpass", fs=Fs)
         self.ps_A = [1] +  [0 for i in range(n-1)]
 
-        # self.ps_w, self.ps_gd = signal.group_delay((self.ps_flt, self.ps_A), fs=Fs)
+        # Evento que señala cuando se esta tocando una partitura (para hacer el cambio automatico de nota)
+        self.ps_playing_tune = threading.Event()
+
         self.ps_playing = False
         self.ps_last_Btn_MOVE = False
         self.ps_last_Btn_CROSS = False
@@ -524,10 +527,11 @@ class Window(QMainWindow, PlotWindow):
                 flow = self.ps_trigger_v*50
                 if self.ps_Btn_SQUARE:
                     flow += flow*0.1*np.sin(2*np.pi*5*time())
+                ## a partir de  x, z, self.ps_accel_y, xf y zf, las posiciones de los comandos de ps move que representan la boca del robot y el bisel de la flauta (entregadas como pixeles en la imagen), se escalan los valores para dirigir el movimiento del robot
                 alpha = -self.ps_accel_y*45
                 l, theta, of = self.get_l_theta_of_ps(self.ps_x1,self.ps_y1,alpha,self.ps_x2,self.ps_y2)
-                of = of/25
-                l  = max(0,l-20) / 25
+                of = of/25 # cada px de la imagen se escala en 1/25 para el offset
+                l  = max(0,l-20) / 25 # cada px de la imagen se escala en 1/25 para el largo del jet
 
                 self.ps_theta_hist = np.hstack([self.ps_theta_hist[1:], theta])
                 theta_filtrado = signal.lfilter(self.ps_flt, self.ps_A, self.ps_theta_hist)
@@ -769,65 +773,6 @@ class Window(QMainWindow, PlotWindow):
         self.last_path = os.path.split(fname2)[0]
         self.musician_pipe.send(["memory.save_recorded_data", fname, fname2])
 
-    def check_path(self):
-        for i in self.r_error_funcs:
-            self.graphicsView.removeItem(i)
-        # for i in self.theta_error_funcs:
-        #     self.graphicsView_2.removeItem(i)
-        for i in self.offset_error_funcs:
-            self.graphicsView_3.removeItem(i)
-        possible = True
-        if self.space_of_instruction == 1:
-            self.goToCoursorButton.setEnabled(True)
-            self.seeMotorRefsButton.setEnabled(True)
-        elif self.space_of_instruction == 0:
-            t, f1, p, vib, fil = calculate_route(self.route)
-            t, f2, p, vib, fil = calculate_route(self.route2)
-            t, f3, p, vib, fil = calculate_route(self.route3)
-            error = []
-            for i in range(len(t)):
-                try:
-                    get_x_z_alpha(f1[i], f2[i], f3[i])
-                except:
-                    possible = False
-                    error.append(i)
-            if possible:
-                self.goToCoursorButton.setEnabled(True)
-                self.seeMotorRefsButton.setEnabled(True)
-            else:
-                all_areas = []
-                last_area = []
-                for i in range(len(error)):
-                    last_area.append(error[i])
-                    if i < len(error) - 1:
-                        if error[i + 1] - 1 != error[i]:
-                            all_areas.append(last_area)
-                            last_area = []
-                if len(last_area):
-                    all_areas.append(last_area)
-                for area in all_areas:
-                    t_e = []
-                    fr_e = []
-                    #ft_e = []
-                    fo_e = []
-                    for i in area:
-                        t_e.append(t[i])
-                        fr_e.append(f1[i])
-                        #ft_e.append(f2[i])
-                        fo_e.append(f3[i])
-                    func1 = pg.PlotCurveItem(pen=pg.mkPen((255,0,0,50), width=20))
-                    #func2 = pg.PlotCurveItem(pen=pg.mkPen((255,0,0,50), width=20))
-                    func3 = pg.PlotCurveItem(pen=pg.mkPen((255,0,0,50), width=20))
-                    func1.setData(t_e, fr_e)
-                    #func2.setData(t_e, ft_e)
-                    func3.setData(t_e, fo_e)
-                    self.graphicsView.addItem(func1)
-                    #self.graphicsView_2.addItem(func2)
-                    self.graphicsView_3.addItem(func3)
-                    self.r_error_funcs.append(func1)
-                    #self.theta_error_funcs.append(func2)
-                    self.offset_error_funcs.append(func3)
-
     def closeEvent(self, a0: QtGui.QCloseEvent):
         '''
         Esta función se ejecuta al cerrar el programa, para terminar todos los procesos que están corriendo
@@ -856,7 +801,7 @@ class Window(QMainWindow, PlotWindow):
         '''
         if 'recent_saves.txt' in os.listdir(self.base_path):
             recents = []
-            with open(self.base_path + '/recent_saves.txt', 'r') as file:
+            with open(self.base_path + '/src/recent_saves.txt', 'r') as file:
                 for line in file.readlines():
                     line = line.replace("\n", "")
                     if line in recents:
