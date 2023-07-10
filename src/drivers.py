@@ -438,8 +438,9 @@ class AMCIDriver(Process):
         self.virtual_axis = VirtualAxis(self.running, 0.01, self.t0, self.virtual_axis_pipe, verbose=False)
         self.virtual_axis.start() 
         print("Virtual axis started...")
-        self.musician_pipe.send(["driver_started"]) # se da aviso de que el driver esta funcionando
-        if self.connected:
+        if not self.connected:
+            self.musician_pipe.send(["driver_started"]) # se da aviso de que el driver esta funcionando
+        else:
             # Se envia el mensaje a la central de comunicacion para que registre la sesión para iniciar la comunicación
             self.comm_pipe.send(["registerSession", self.hostname])
             time.sleep(0.1)
@@ -592,6 +593,7 @@ class AMCIDriver(Process):
                 self.comm_data[self.hostname + '_out'] = c.get_list_to_send()
                 time.sleep(0.1)
 
+            self.musician_pipe.send(["driver_started"]) # se da aviso de que el driver esta funcionando
             self.synchrostep_out_list = synchrostep_command.get_list_to_send()
             self.comm_data[self.hostname + '_out'] = self.synchrostep_out_list # se comienza el movimiento 'synchrostep' donde el motor intenta seguir el eje virtual cuya posición y velocidad se informan de forma periódica al dispositivo
 
@@ -1367,7 +1369,6 @@ class PressureSensor(Process):
         self.verbose = verbose
         self.pressure = Value("d", 0.0)
         self.hostname = hostname
-        self.verbose = verbose
         
         if self.connected:
             self.comm_pipe.send(["explicit_conn", self.hostname, 0, 4*8, 10, 4, ethernetip.EtherNetIP.ENIP_IO_TYPE_INPUT, 101, ethernetip.EtherNetIP.ENIP_IO_TYPE_OUTPUT, 100])

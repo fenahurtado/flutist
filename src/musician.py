@@ -47,10 +47,10 @@ class Musician(Process):
         self.comm_event = Event()
         self.comm_event.set()
         self.comm_pipe, comm_pipe2 = Pipe()
-        self.communications = CommunicationCenter(self.host, self.comm_event, comm_pipe2, self.data, connect=communication_connect, verbose=True)
+        self.communications = CommunicationCenter(self.host, self.comm_event, comm_pipe2, self.data, connect=communication_connect, verbose=False)
         self.communications.start()
+
         print("Communication started...\nConnecting Drivers...")
-        print(DATA)
 
         self.x_driver_conn, x_driver_end_conn = Pipe()
         self.x_virtual_axis_conn, x_virtual_axis_end_conn = Pipe()
@@ -79,7 +79,7 @@ class Musician(Process):
         # self.virtual_fingers = VirtualFingers(self.running, 0.05, self.t0, self.fingers_driver, virtual_fingers_driver_end_conn, verbose=True)
 
         self.preasure_sensor_conn, preasure_sensor_end_conn = Pipe()
-        self.preasure_sensor = PressureSensor(self.connections[4], self.running, preasure_sensor_end_conn, self.comm_pipe, self.data, connected=self.pressure_sensor_connect, verbose=True)
+        self.preasure_sensor = PressureSensor(self.connections[4], self.running, preasure_sensor_end_conn, self.comm_pipe, self.data, connected=self.pressure_sensor_connect, verbose=False)
         
         self.mic_conn, mic_end_conn = Pipe()
         self.mic_running = Event()

@@ -26,12 +26,15 @@ from src.forms.forms import PointForm, VibratoForm, windows_vibrato, FilterForm,
 
 
 class StartUpWindow(QSplashScreen, StartWindow):
-    stop_playing = QtCore.pyqtSignal()
+    """
+    Esta ventana se abre al inicio del programa, mientras se cargan todos los modulos.
+    Una vez que esta todo corriendo se cierra.
+    """
     def __init__(self, app, pipe, parent=None):
         super().__init__(parent)
         self.setupUi(self)
         self.app = app
-        self.pipe = pipe
+        self.pipe = pipe # en este pipe va recibiendo los mensajes de los drivers que estan listos
     
     def set_progress(self, value):
         self.progressBar.setValue(int(value))
@@ -45,68 +48,74 @@ class StartUpWindow(QSplashScreen, StartWindow):
         y = int(ag.height()/2 - widget.height()/2)
         self.move(x, y)
 
-    def wait_loading(self):
+    def wait_loading(self): # se ejecuta esta funcion para esperar que se inicien y esten listos todos los procesos de inicio del robot
         progress = 10
-        self.set_progress(10)
-        while True:
+        self.set_progress(10) # definimos 9 procesos que hay que esperar, cada uno suma 10%, asi que se empieza con 10 para sumar 100
+        while True: # antes que se inicien todos los procesos se mantiene en este loop. Este se ejecuta en el thread principal, por lo que debe salir antes de seguir ejecutando codigo (lo que sigue al llamado de esta funcion es el show de la ventana principal)
             if self.pipe.poll(0.2):
                 m = self.pipe.recv()
-                if m[0] == "instances created":
+                if m[0] == "instances created": # se crearon las instancias de los drivers y otros objetos, pero quizas aun no estan operacionales
                     progress += 10
                     self.instancesCheck.setChecked(True)
-                elif m[0] == "x_driver_started":
+                elif m[0] == "x_driver_started": # eje x operacional y home listo
                     progress += 10
                     self.XCheck.setChecked(True)
-                elif m[0] == "z_driver_started":
+                elif m[0] == "z_driver_started": # eje z operacional y home listo
                     progress += 10
                     self.ZCheck.setChecked(True)
-                elif m[0] == "alpha_driver_started":
+                elif m[0] == "alpha_driver_started": # eje alpha operacional y home listo
                     progress += 10
                     self.AlphaCheck.setChecked(True)
-                elif m[0] == "memory_started":
+                elif m[0] == "memory_started": # memoria lista
                     progress += 10
                     self.memoryCheck.setChecked(True)
-                elif m[0] == "microphone_started":
+                elif m[0] == "microphone_started": # microfono listo
                     progress += 10
                     self.microphoneCheck.setChecked(True)
-                elif m[0] == "flow_driver_started":
+                elif m[0] == "flow_driver_started": # controlador de flujo listo
                     progress += 10
                     self.flowCheck.setChecked(True)
-                elif m[0] == "pressure_sensor_started":
+                elif m[0] == "pressure_sensor_started": # sensor de presion listo
                     progress += 10
                     self.pressureCheck.setChecked(True)
-                elif m[0] == "finger_driver_started":
+                elif m[0] == "finger_driver_started": # controlador de dedos listo
                     progress += 10
                     self.fingersCheck.setChecked(True)
-            self.set_progress(progress)
-            if progress >= 100:
+            self.set_progress(progress) # aumentamos el progreso de la barra
+            if progress >= 100: # si todos los procesos se terminaron, salimos
                 self.close()
                 break
 
 class Window(QMainWindow, PlotWindow):
-    stop_playing = QtCore.pyqtSignal()
+    """
+    Ventana principal de la interaccion con el robot.
+    """
+    stop_playing = QtCore.pyqtSignal() # sirve para emitir la señal de que se terminó de tocar una partitura. Puede ser porque llego al final de la partitura o porque fue detenida por el usuario
+    refresh_plots_signal = QtCore.pyqtSignal(list) # sirve para emitir la señal de que se tienen que actualizar uno o varios gráficos desde un thread distinto al principal
     def __init__(self, app, running, musician_pipe, data, parent=None, connected=False):
         super().__init__(parent)
         self.setupUi(self)
         self.app = app
-        self.route = []
-        self.route2 = []
-        self.route3 = []
-        self.route4 = []
-        self.route5 = []
+        self.route = [] # datos para el grafico 1: l
+        self.route2 = [] # datos para el grafico 2: theta
+        self.route3 = [] # datos para el grafico 3: offset
+        self.route4 = [] # datos para el grafico 4: flow
+        self.route5 = [] # datos para el grafico 5: notas
 
-        self.running = running
-        self.musician_pipe = musician_pipe
-        self.data = data
-        self.connected = connected
-        self.playing = threading.Event()
+        self.running = running # evento que conecta todos los procesos. Se cierra al cerrar la aplicacion
+        self.musician_pipe = musician_pipe # pipe que conecta con el musico. Se usa para enviarle todas las instrucciones que se comandan a traves de esta interfaz gráfica
+        self.data = data # data compartida entre procesos. Tiene por ejemplo las mediciones de los distintos sensores, que este proceso usa para graficarlas
+        self.connected = connected # bool que dice si los actuadores estan realmente conectados o si solo es una simulacion
+        self.playing = threading.Event() # evento para ejecutar una partitura (sin bloquear el thread principal). Se usa para comunicar al thread si el usuario decide parar la ejecución apretando el botón de stop
 
-        self.graphicsView.setBackground('w')
+        ## se tienen 5 graphicsView para insertar los distintos graficos de l, theta, offset, flow y notas
+        self.graphicsView.setBackground('w') # fondo blanco
         self.graphicsView_2.setBackground('w')
         self.graphicsView_3.setBackground('w')
         self.graphicsView_4.setBackground('w')
         self.graphicsView_5.setBackground('w')
 
+        ## se crean lineas verticales para representar el tiempo actual. Lo llamo cursor en adelante, al moverlo se indica la parte de la partitura en donde se quiere empezar a tocar y cuando se ejecuta una cancion el cursor va avanzando en la partitura. Puede moverse con un slider que se encuentra abajo de los 5 graphicsView
         self.rule = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('m', width=2), label='t')
         self.rule2 = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('m', width=2), label='t')
         self.rule3 = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('m', width=2), label='t')
@@ -117,29 +126,31 @@ class Window(QMainWindow, PlotWindow):
         self.graphicsView_3.addItem(self.rule3)
         self.graphicsView_4.addItem(self.rule4)
         self.graphicsView_5.addItem(self.rule5)
+        
+        ## 1: jet-lenght
+        self.func1 = pg.PlotCurveItem(pen=pg.mkPen('b', width=2)) # creamos la curva que representa la referencia para l
+        self.func1.setClickable(10) # la hacemos clickeable para interactuar más facil con ella (para agregar puntos)
+        self.func1.sigClicked.connect(self.onCurveClicked) # ejecutamos la funcion onCurveClicked cuando se hace click sobre la curva.  
+        self.graphicsView.addItem(self.func1) # la agregamos al graphicsView
+        self.graphicsView.setLabel('left', 'l', units='mm') # le ponemos nombre y unidad al eje y
 
-        self.func1 = pg.PlotCurveItem(pen=pg.mkPen('b', width=2))
-        self.func1.setClickable(10)
-        self.func1.sigClicked.connect(self.onCurveClicked)
-        self.graphicsView.addItem(self.func1)
-        self.graphicsView.setLabel('left', 'l', units='mm')
-
-        self.r_real = pg.PlotCurveItem(pen=pg.mkPen('g', width=2))
+        self.r_real = pg.PlotCurveItem(pen=pg.mkPen('g', width=2)) # curva que representará la medición de l a partir de los encoders de los motores. Esta curva solo será ploteada cuando se este ejecutando una partitura
         self.graphicsView.addItem(self.r_real)
 
-        self.scatter1 = pg.ScatterPlotItem(size=8, brush=pg.mkBrush(30, 255, 35, 255))
-        self.scatter1.sigClicked.connect(self.onPointsClicked)
+        self.scatter1 = pg.ScatterPlotItem(size=8, brush=pg.mkBrush(30, 255, 35, 255)) # este primer scatter tiene los puntos que definen las posiciones por donde pasa la curva de referencia para l.
+        self.scatter1.sigClicked.connect(self.onPointsClicked) # hacemos que los puntos sean clickeables para interactuar mas facil con ellos. Al hacerles click se despliega un menu que permite mover los puntos (de forma dinamica), editarlos o borrarlos 
         self.graphicsView.addItem(self.scatter1)
 
-        self.vibscatter1 = pg.ScatterPlotItem(size=8, brush=pg.mkBrush(255, 35, 35, 255))
-        self.vibscatter1.sigClicked.connect(self.onVibratoClicked)
+        self.vibscatter1 = pg.ScatterPlotItem(size=8, brush=pg.mkBrush(255, 35, 35, 255)) # el segundo scatter tiene los puntos donde se comienza un vibrato. Estos son rojos.
+        self.vibscatter1.sigClicked.connect(self.onVibratoClicked) # los hacemos clickeables, funcionan parecido a los puntos de la trayectoria
         self.graphicsView.addItem(self.vibscatter1)
 
-        self.filscatter1 = pg.ScatterPlotItem(size=8, brush=pg.mkBrush(35, 35, 255, 255))
-        self.filscatter1.sigClicked.connect(self.onFilterClicked)
+        self.filscatter1 = pg.ScatterPlotItem(size=8, brush=pg.mkBrush(35, 35, 255, 255)) # el tercer scatter tiene los puntos donde se agregan filtros. Estos son azules.
+        self.filscatter1.sigClicked.connect(self.onFilterClicked) # nuevamente los hacemos clickeables y funcionan parecido a los otros dos
         self.graphicsView.addItem(self.filscatter1)
 
-        ## 2
+        ## Se repiten estas mismas curvas y scatters para cada uno de los graficos
+        ## 2: theta
         self.func2 = pg.PlotCurveItem(pen=pg.mkPen('b', width=2))
         self.func2.setClickable(10)
         self.func2.sigClicked.connect(self.onCurveClicked2)
@@ -161,7 +172,7 @@ class Window(QMainWindow, PlotWindow):
         self.filscatter2.sigClicked.connect(self.onFilterClicked2)
         self.graphicsView_2.addItem(self.filscatter2)
 
-        ## 3
+        ## 3: offset
         self.func3 = pg.PlotCurveItem(pen=pg.mkPen('b', width=2))
         self.func3.setClickable(10)
         self.func3.sigClicked.connect(self.onCurveClicked3)
@@ -183,7 +194,7 @@ class Window(QMainWindow, PlotWindow):
         self.filscatter3.sigClicked.connect(self.onFilterClicked3)
         self.graphicsView_3.addItem(self.filscatter3)
 
-        ## 4
+        ## 4: flow
         self.func4 = pg.PlotCurveItem(pen=pg.mkPen('b', width=2))
         self.func4.setClickable(10)
         self.func4.sigClicked.connect(self.onCurveClicked4)
@@ -205,7 +216,8 @@ class Window(QMainWindow, PlotWindow):
         self.filscatter4.sigClicked.connect(self.onFilterClicked4)
         self.graphicsView_4.addItem(self.filscatter4)
 
-        ## 5
+        ## 5: notas
+        ## el grafico de las notas, a diferencia de los demas, no tiene el scatter de los filtros, y el del vibrato funciona distinto (se reemplaza por trill)
         self.func5 = pg.PlotCurveItem(pen=pg.mkPen('b', width=2))
         self.func5.setClickable(10)
         self.func5.sigClicked.connect(self.onCurveClicked5)
@@ -225,67 +237,68 @@ class Window(QMainWindow, PlotWindow):
         self.vibscatter5.sigClicked.connect(self.onVibratoClicked5)
         self.graphicsView_5.addItem(self.vibscatter5)
 
-        # self.filscatter5 = pg.ScatterPlotItem(size=8, brush=pg.mkBrush(35, 35, 255, 255))
-        # self.filscatter5.sigClicked.connect(self.onFilterClicked)
-        # self.graphicsView_5.addItem(self.filscatter5)
 
+        ## creamos los arreglos donde se almacenará la informacion de los graficos de las mediciones reales de cada eje
+        self.r_plot = np.array([])
+        self.theta_plot = np.array([])
+        self.offset_plot = np.array([])
+        self.flow_plot = np.array([])
+        self.freq_plot = np.array([])
+        self.t_plot = np.array([])
+
+        ## Se linkean los ejes X para que se muevan en conjunto. Esto se hace de forma escalonada (el 2 con el 1, el 3 con el 2, el 4 con el 3...)
         self.graphicsView.setXLink(self.graphicsView_2)
         self.graphicsView_2.setXLink(self.graphicsView_3)
         self.graphicsView_3.setXLink(self.graphicsView_4)
         self.graphicsView_4.setXLink(self.graphicsView_5)
 
-        #self.graphicsView_2.hide()
-        #self.graphicsView_3.hide()
-        #self.graphicsView_4.hide()
-        #self.graphicsView_5.hide()
-
+        ## Conectamos los checkboxes a sus funciones. Si se aprieta alguno se esconde o muestra uno de los gráficos
         self.checkBox.stateChanged.connect(self.checkBox_clicked)
         self.checkBox_2.stateChanged.connect(self.checkBox2_clicked)
         self.checkBox_3.stateChanged.connect(self.checkBox3_clicked)
         self.checkBox_4.stateChanged.connect(self.checkBox4_clicked)
         self.checkBox_5.stateChanged.connect(self.checkBox5_clicked)
 
-        #help(self.graphicsView.scene())
         
-        #self.graphicsView.scene().sigMouseMoved.connect(self.mouse_moved)
-        #self.graphicsView.scene().sigMouseHover.connect(self.mouse_hover)
-
-        self.pointMenu = QMenu(self)
+        ## Creamos todos los menus desplegables (que se muestran al hacer click en algun lugar)
+        self.pointMenu = QMenu(self) # este se mostrara al hacer click en algun punto de las trayectorias (los puntos verdes)
         self.movePoint = self.pointMenu.addAction("Move")
         self.editPoint = self.pointMenu.addAction("Edit")
         self.deletePoint = self.pointMenu.addAction("Delete")
-        self.vibratoMenu = QMenu(self)
+        self.vibratoMenu = QMenu(self) # este en algun punto que represente un vibrato (los puntos rojos)
         self.moveVibrato = self.vibratoMenu.addAction("Move")
         self.editVibrato = self.vibratoMenu.addAction("Edit")
         self.deleteVibrato = self.vibratoMenu.addAction("Delete")
-        self.filterMenu = QMenu(self)
+        self.filterMenu = QMenu(self) # este en algun punto que represente un filtro (los puntos azules)
         self.moveFilter = self.filterMenu.addAction("Move")
         self.editFilter = self.filterMenu.addAction("Edit")
         self.deleteFilter = self.filterMenu.addAction("Delete")
-        self.graphMenu = QMenu(self)
+        self.graphMenu = QMenu(self) # este en algun lugar de la curva (que no sea sobre un punto verde, azul o rojo)
         self.addPoint = self.graphMenu.addAction("Add point")
         self.addVibrato = self.graphMenu.addAction("Add vibrato")
         self.addFilter = self.graphMenu.addAction("Add filter")
         self.openTable = self.graphMenu.addAction("Open as table")
-        self.noteMenu = QMenu(self)
+        self.noteMenu = QMenu(self) # este es parecido al self.graphMenu, pero para el quinto grafico (el de las notas)
         self.addNote = self.noteMenu.addAction("Add note")
         self.addTrill = self.noteMenu.addAction("Add trill")
         self.openNotesTable = self.noteMenu.addAction("Open as table")
 
+        # estas listas se usan para indicar si se esta moviendo actualmente un punto en cada uno de los gráficos. Se usan como condicion para decidir hacer algo cuando se esta moviendo el mouse por encima de un gráfico
         self.moving_point = [False for i in range(5)]
         self.moving_vibrato = [False for i in range(5)]
         self.moving_filter = [False for i in range(5)]
-        self.segundo_click = [False for i in range(5)]
+        self.segundo_click = [False for i in range(5)] # se usa para soltar los puntos
 
+        # en caso de que se esté moviendo un punto (listas anteriores) estas listas indican qué punto es
         self.moving_point_index = [0 for i in range(5)]
         self.moving_vibrato_index = [0 for i in range(5)]
         self.moving_filter_index = [0 for i in range(5)]
 
-        self.graphicsView.scene().sigMouseClicked.connect(self.mouse_clicked)
-        self.graphicsView.scene().sigMouseMoved.connect(self.mouse_moved)
+        self.graphicsView.scene().sigMouseClicked.connect(self.mouse_clicked) # cuando se hace click en alguna parte del graphicsView que no sea sobre un punto o una curva
+        self.graphicsView.scene().sigMouseMoved.connect(self.mouse_moved) # cuando se mueve por encima del graphicsView
 
-        self.graphicsView_2.scene().sigMouseClicked.connect(self.mouse_clicked2)
-        self.graphicsView_2.scene().sigMouseMoved.connect(self.mouse_moved2)
+        self.graphicsView_2.scene().sigMouseClicked.connect(self.mouse_clicked2) # cuando se hace click en alguna parte del graphicsView_2 que no sea sobre un punto o una curva
+        self.graphicsView_2.scene().sigMouseMoved.connect(self.mouse_moved2) # cuando se mueve por encima del graphicsView_2
 
         self.graphicsView_3.scene().sigMouseClicked.connect(self.mouse_clicked3)
         self.graphicsView_3.scene().sigMouseMoved.connect(self.mouse_moved3)
@@ -296,13 +309,14 @@ class Window(QMainWindow, PlotWindow):
         self.graphicsView_5.scene().sigMouseClicked.connect(self.mouse_clicked5)
         self.graphicsView_5.scene().sigMouseMoved.connect(self.mouse_moved5)
 
-        self.statesFromNotesButton.clicked.connect(self.get_states_from_notes)
-        self.changeDurationButton.clicked.connect(self.change_score_duration)
-        self.addCorrectionButton.clicked.connect(self.add_correction)
-        self.scaleTimeButton.clicked.connect(self.scale_time)
-        self.seeMotorRefsButton.clicked.connect(self.see_motor_refs)
-        self.manualControlButton.clicked.connect(self.open_manual_control)
-        self.psControlButton.clicked.connect(self.ps_control)
+        ## conectamos los botones a sus funciones
+        self.statesFromNotesButton.clicked.connect(self.get_states_from_notes) # boton para crear trayectorias en cada uno de los cuatro primeros ejes a partir de las notas.
+        self.changeDurationButton.clicked.connect(self.change_score_duration) # para cambiar el largo de la partitura. Inicialmente es de 20 segundos
+        self.addCorrectionButton.clicked.connect(self.add_correction) # para agregar correcciones generales a los distintos ejes (desplazar todo un eje en el tiempo o en el eje y) 
+        self.scaleTimeButton.clicked.connect(self.scale_time) # para escalar el tiempo (comprimir o alargar la partitura)
+        self.seeMotorRefsButton.clicked.connect(self.see_motor_refs) # para visualizar las referencias en el espacio de las junturas. Esta funcion abre una ventana especial con los graficos de las posiciones y velocidades para cada motor a partir de la partitura que se escribió.
+        self.manualControlButton.clicked.connect(self.open_manual_control) # para abrir la ventana que tiene los controles para mover el robot manualmente. 
+        self.psControlButton.clicked.connect(self.ps_control) # ejecuta el script para usar los controles de ps_move
         self.softStopButton.clicked.connect(self.soft_stop)
         self.process_running = Event()
         self.ps_serial1 = ""
@@ -320,6 +334,7 @@ class Window(QMainWindow, PlotWindow):
         self.playButton.clicked.connect(self.play)
         self.stopButton.clicked.connect(self.stop)
         self.stop_playing.connect(self.stop)
+        self.refresh_plots_signal.connect(self.refresh_plots)
         self.clearPlotButton.clicked.connect(self.clear_plot)
         self.clearPlotButton.setEnabled(False)
         self.r_error_funcs = []
@@ -359,15 +374,25 @@ class Window(QMainWindow, PlotWindow):
         r = self.get_copy_of_routes(self.route, self.route2, self.route3, self.route4, self.route5)
         self.undo_list.append(r)
         
-        self.reprint_plot_2()
-        self.reprint_plot_3()
-        self.reprint_plot_4()
-        self.reprint_plot_5()
-        self.reprint_plot_1()
+        self.refresh_plots_signal.emit([1,2,3,4,5])
 
         self.setWindowTitle("Pierre - Flutist Robot")
         self.file_saved = True
     
+    def refresh_plots(self, plot_list):
+        if 2 in plot_list:
+            self.reprint_plot_2()
+        if 3 in plot_list:
+            self.reprint_plot_3()
+        if 4 in plot_list:
+            self.reprint_plot_4()
+        if 5 in plot_list:
+            self.reprint_plot_5()
+        if 1 in plot_list:
+            self.reprint_plot_1()
+        if 'r' in plot_list:
+            self.reprint_real_func()
+
     def get_copy_of_routes(self, r1, r2, r3, r4, r5):
         r1_copy = {'total_t': r1['total_t'], 'Fs': r1['Fs'], 'points': r1['points'].copy(), 'filters': r1['filters'].copy(), 'vibrato': r1['vibrato'].copy(), 'history': r1['history'].copy()}
         r2_copy = {'total_t': r2['total_t'], 'Fs': r2['Fs'], 'points': r2['points'].copy(), 'filters': r2['filters'].copy(), 'vibrato': r2['vibrato'].copy(), 'history': r2['history'].copy()}
@@ -539,11 +564,7 @@ class Window(QMainWindow, PlotWindow):
             self.route3 = r[2]
             self.route4 = r[3]
             self.route5 = r[4]
-            self.reprint_plot_2()
-            self.reprint_plot_3()
-            self.reprint_plot_4()
-            self.reprint_plot_5()
-            self.reprint_plot_1()
+            self.refresh_plots_signal.emit([1,2,3,4,5])
             self.changes_made(from_hist=True)
 
     def redo(self):
@@ -556,11 +577,7 @@ class Window(QMainWindow, PlotWindow):
             self.route3 = r[2]
             self.route4 = r[3]
             self.route5 = r[4]
-            self.reprint_plot_2()
-            self.reprint_plot_3()
-            self.reprint_plot_4()
-            self.reprint_plot_5()
-            self.reprint_plot_1()
+            self.refresh_plots_signal.emit([1,2,3,4,5])
             self.changes_made(from_hist=True)
 
     def change_to_joint_space(self):
@@ -672,19 +689,19 @@ class Window(QMainWindow, PlotWindow):
         self.stopButton.setEnabled(True)
         self.playButton.setEnabled(False)
         self.recordCheckBox.setEnabled(False)
+        self.horizontalSlider.setEnabled(False)
     
     def move_coursor_and_plot(self):
         t, f_r, p, vib, fil = calculate_route(self.route)
         ti = int(len(t) * self.horizontalSlider.value() / 99)
         slider_initial_value = self.horizontalSlider.value()
-        self.horizontalSlider.setEnabled(False)
         t_0 = time()
-        r_plot = np.array([])
-        theta_plot = np.array([])
-        offset_plot = np.array([])
-        flow_plot = np.array([])
-        freq_plot = np.array([])
-        t_plot = np.array([])
+        self.r_plot = np.array([])
+        self.theta_plot = np.array([])
+        self.offset_plot = np.array([])
+        self.flow_plot = np.array([])
+        self.freq_plot = np.array([])
+        self.t_plot = np.array([])
         last_t = self.data["times"][-1]
         first_t = self.data["times"][-1]
         while True:
@@ -695,23 +712,18 @@ class Window(QMainWindow, PlotWindow):
                 last_index = self.data["times"].searchsorted(last_t)
                 try:
                     if self.space_of_instruction == 0:
-                        r_plot = np.hstack([r_plot, self.data["radius"][last_index+1:]])
-                        theta_plot = np.hstack([theta_plot, self.data["theta"][last_index+1:]])
-                        offset_plot = np.hstack([offset_plot, self.data["offset"][last_index+1:]])
+                        self.r_plot = np.hstack([self.r_plot, self.data["radius"][last_index+1:]])
+                        self.theta_plot = np.hstack([self.theta_plot, self.data["theta"][last_index+1:]])
+                        self.offset_plot = np.hstack([self.offset_plot, self.data["offset"][last_index+1:]])
                     elif self.space_of_instruction == 1:
-                        r_plot = np.hstack([r_plot, self.data["x"][last_index+1:]])
-                        theta_plot = np.hstack([theta_plot, self.data["z"][last_index+1:]])
-                        offset_plot = np.hstack([offset_plot, self.data["alpha"][last_index+1:]])
-                    flow_plot = np.hstack([flow_plot, self.data["mass_flow"][last_index+1:]])
-                    freq_plot = np.hstack([freq_plot, (12*np.log2(self.data["frequency"][last_index+1:]) - 12*np.log2(440*2**(-7/12))
+                        self.r_plot = np.hstack([self.r_plot, self.data["x"][last_index+1:]])
+                        self.theta_plot = np.hstack([self.theta_plot, self.data["z"][last_index+1:]])
+                        self.offset_plot = np.hstack([self.offset_plot, self.data["alpha"][last_index+1:]])
+                    self.flow_plot = np.hstack([self.flow_plot, self.data["mass_flow"][last_index+1:]])
+                    self.freq_plot = np.hstack([self.freq_plot, (12*np.log2(self.data["frequency"][last_index+1:]) - 12*np.log2(440*2**(-7/12))
 ) / 2])
-                    t_plot = np.hstack([t_plot, self.data["times"][last_index+1:] - first_t + t[ti]])
-                    # t_plot = np.hstack(t[ti], t[ti] + t_act, len(r_plot))
-                    self.r_real.setData(t_plot, r_plot)
-                    self.theta_real.setData(t_plot, theta_plot)
-                    self.offset_real.setData(t_plot, offset_plot)
-                    self.flow_real.setData(t_plot, flow_plot)
-                    self.freq_real.setData(t_plot, freq_plot)
+                    self.t_plot = np.hstack([self.t_plot, self.data["times"][last_index+1:] - first_t + t[ti]])
+                    self.refresh_plots_signal.emit(['r'])
                 except:
                     print("Hubo un error")
                 last_t = self.data["times"][-1]
@@ -926,11 +938,7 @@ class Window(QMainWindow, PlotWindow):
         self.populate_graph()
         self.horizontalSlider.setValue(0)
         self.clear_plot()
-        self.reprint_plot_2()
-        self.reprint_plot_3()
-        self.reprint_plot_4()
-        self.reprint_plot_5()
-        self.reprint_plot_1()
+        self.refresh_plots_signal.emit([1,2,3,4,5])
         self.changes_saved()
 
     def open(self, fname=None):
@@ -970,11 +978,7 @@ class Window(QMainWindow, PlotWindow):
                         self.route3 = data['route_offset']
                         self.route4 = data['route_flow']
                         self.route5 = data['route_fingers']
-                        self.reprint_plot_2()
-                        self.reprint_plot_3()
-                        self.reprint_plot_4()
-                        self.reprint_plot_5()
-                        self.reprint_plot_1()
+                        self.refresh_plots_signal.emit([1,2,3,4,5])
                         self.filename = fname
                         self.changes_saved()
                     except:
@@ -1025,11 +1029,7 @@ class Window(QMainWindow, PlotWindow):
             self.route3['total_t'] = new_dur
             self.route4['total_t'] = new_dur
             self.route5['total_t'] = new_dur
-            self.reprint_plot_2()
-            self.reprint_plot_3()
-            self.reprint_plot_4()
-            self.reprint_plot_5()
-            self.reprint_plot_1()
+            self.refresh_plots_signal.emit([1,2,3,4,5])
 
     def add_correction(self):
         data = [0,0,0,0,0,0,0,0,0,0]
@@ -1067,11 +1067,7 @@ class Window(QMainWindow, PlotWindow):
                 p[0] += notes_t_dis
                 p[0] = min(self.route['total_t'], max(p[0], 0))
                 p[1] = dict_notes[round((n + notes_dis/2)*2) / 2]
-            self.reprint_plot_2()
-            self.reprint_plot_3()
-            self.reprint_plot_4()
-            self.reprint_plot_5()
-            self.reprint_plot_1()
+            self.refresh_plots_signal.emit([1,2,3,4,5])
 
     def scale_time(self):
         data = [1]
@@ -1094,11 +1090,7 @@ class Window(QMainWindow, PlotWindow):
             for p in self.route5['notes']:
                 p[0] *= scale
             
-            self.reprint_plot_2()
-            self.reprint_plot_3()
-            self.reprint_plot_4()
-            self.reprint_plot_5()
-            self.reprint_plot_1()
+            self.refresh_plots_signal.emit([1,2,3,4,5])
 
     def see_motor_refs(self):
         plotwin = PassivePlotWindow(self.app, self.route, self.route2, self.route3, parent=self, space=self.space_of_instruction)
@@ -1199,7 +1191,7 @@ class Window(QMainWindow, PlotWindow):
                 p = self.route['filters'][index]
                 self.route['filters'].remove(p)
                 self.route['history'].append(['delete_filter', p])
-                self.reprint_plot_1()
+                self.refresh_plots_signal.emit([1])
                 self.changes_made()
         else:
             self.moving_point[0] = False
@@ -1237,7 +1229,7 @@ class Window(QMainWindow, PlotWindow):
                 p = self.route['vibrato'][index]
                 self.route['vibrato'].remove(p)
                 self.route['history'].append(['delete_vibrato', p])
-                self.reprint_plot_1()
+                self.refresh_plots_signal.emit([1])
                 self.changes_made()
         else:
             self.moving_point[0] = False
@@ -1256,7 +1248,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route['points'].append([x, y])
                 self.route['points'].sort(key=lambda x: x[0])
                 self.route['history'].append(['add_point', [x, y]])
-                self.reprint_plot_1()
+                self.refresh_plots_signal.emit([1])
                 self.changes_made()
             elif action == self.addVibrato:
                 data=[x, 0, 0, 0, 0]
@@ -1270,7 +1262,7 @@ class Window(QMainWindow, PlotWindow):
                     window_v = windows_vibrato[data[4]]
                     self.route['vibrato'].append([time_i, duration, amp, freq, window_v])
                     self.route['history'].append(['vibrato', [time_i, duration, amp, freq, window_v]])
-                    self.reprint_plot_1()
+                    self.refresh_plots_signal.emit([1])
                     self.changes_made()
             elif action == self.addFilter:
                 data=[x, x] + [0 for i in range(14)]
@@ -1291,7 +1283,7 @@ class Window(QMainWindow, PlotWindow):
                         try:
                             self.route['filters'].append([time_i, time_f, filter_choice, params])
                             self.route['history'].append(['filter', [time_i, time_f, filter_choice, params]])
-                            self.reprint_plot_1()
+                            self.refresh_plots_signal.emit([1])
                             self.changes_made()
                             break
                         except:
@@ -1336,7 +1328,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route['history'].append(['delete_point', p])
                 self.changes_made()
                 try:
-                    self.reprint_plot_1()
+                    self.refresh_plots_signal.emit([1])
                 except:
                     pass
         else:
@@ -1355,7 +1347,7 @@ class Window(QMainWindow, PlotWindow):
             min_x, max_x = self.find_moving_point_limits(self.route['points'], self.moving_point_index[0], self.route['total_t'])
             if x > min_x and x < max_x:
                 self.route['points'][self.moving_point_index[0]] = [x, y]
-                self.reprint_plot_1()
+                self.refresh_plots_signal.emit([1])
         if self.moving_vibrato[0]:
             self.segundo_click[0] = True
             vb = self.graphicsView.plotItem.vb
@@ -1365,7 +1357,7 @@ class Window(QMainWindow, PlotWindow):
             min_x, max_x = self.find_moving_vibrato_limits(self.route['vibrato'], self.moving_vibrato_index[0], self.route['total_t'])
             if x >= min_x and x <= max_x:
                 self.route['vibrato'][self.moving_vibrato_index[0]][0] = x
-                self.reprint_plot_1()
+                self.refresh_plots_signal.emit([1])
         if self.moving_filter[0]:
             self.segundo_click[0] = True
             vb = self.graphicsView.plotItem.vb
@@ -1377,7 +1369,7 @@ class Window(QMainWindow, PlotWindow):
                 diff = self.route['filters'][self.moving_filter_index[0]][1] - self.route['filters'][self.moving_filter_index[0]][0]
                 self.route['filters'][self.moving_filter_index[0]][0] = x
                 self.route['filters'][self.moving_filter_index[0]][1] = x + diff
-                self.reprint_plot_1()
+                self.refresh_plots_signal.emit([1])
 
     def mouse_clicked(self, event):
         #print(event.scenePos())
@@ -1396,7 +1388,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route['points'].append([x, y])
                 self.route['points'].sort(key=lambda x: x[0])
                 self.route['history'].append(['add_point', [x, y]])
-                self.reprint_plot_1()
+                self.refresh_plots_signal.emit([1])
                 self.changes_made()
 
     def onFilterClicked2(self, obj, point, event):
@@ -1460,7 +1452,7 @@ class Window(QMainWindow, PlotWindow):
                 p = self.route2['filters'][index]
                 self.route2['filters'].remove(p)
                 self.route2['history'].append(['delete_filter', p])
-                self.reprint_plot_2()
+                self.refresh_plots_signal.emit([2])
                 self.changes_made()
         else:
             self.moving_point[1] = False
@@ -1498,7 +1490,7 @@ class Window(QMainWindow, PlotWindow):
                 p = self.route2['vibrato'][index]
                 self.route2['vibrato'].remove(p)
                 self.route2['history'].append(['delete_vibrato', p])
-                self.reprint_plot_2()
+                self.refresh_plots_signal.emit([2])
                 self.changes_made()
         else:
             self.moving_point[1] = False
@@ -1517,7 +1509,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route2['points'].append([x, y])
                 self.route2['points'].sort(key=lambda x: x[0])
                 self.route2['history'].append(['add_point', [x, y]])
-                self.reprint_plot_2()
+                self.refresh_plots_signal.emit([2])
                 self.changes_made()
             elif action == self.addVibrato:
                 data=[x, 0, 0, 0, 0]
@@ -1531,7 +1523,7 @@ class Window(QMainWindow, PlotWindow):
                     window_v = windows_vibrato[data[4]]
                     self.route2['vibrato'].append([time_i, duration, amp, freq, window_v])
                     self.route2['history'].append(['vibrato', [time_i, duration, amp, freq, window_v]])
-                    self.reprint_plot_2()
+                    self.refresh_plots_signal.emit([2])
                     self.changes_made()
             elif action == self.addFilter:
                 data=[x, x] + [0 for i in range(14)]
@@ -1552,7 +1544,7 @@ class Window(QMainWindow, PlotWindow):
                         try:
                             self.route2['filters'].append([time_i, time_f, filter_choice, params])
                             self.route2['history'].append(['filter', [time_i, time_f, filter_choice, params]])
-                            self.reprint_plot_2()
+                            self.refresh_plots_signal.emit([2])
                             self.changes_made()
                             break
                         except:
@@ -1596,7 +1588,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route2['points'].remove(p)
                 self.route2['history'].append(['delete_point', p])
                 try:
-                    self.reprint_plot_2()
+                    self.refresh_plots_signal.emit([2])
                     self.changes_made()
                 except:
                     pass
@@ -1616,7 +1608,7 @@ class Window(QMainWindow, PlotWindow):
             min_x, max_x = self.find_moving_point_limits(self.route2['points'], self.moving_point_index[1], self.route2['total_t'])
             if x > min_x and x < max_x:
                 self.route2['points'][self.moving_point_index[1]] = [x, y]
-                self.reprint_plot_2()
+                self.refresh_plots_signal.emit([2])
         if self.moving_vibrato[1]:
             self.segundo_click[1] = True
             vb = self.graphicsView_2.plotItem.vb
@@ -1626,7 +1618,7 @@ class Window(QMainWindow, PlotWindow):
             min_x, max_x = self.find_moving_vibrato_limits(self.route2['vibrato'], self.moving_vibrato_index[1], self.route2['total_t'])
             if x >= min_x and x <= max_x:
                 self.route2['vibrato'][self.moving_vibrato_index[1]][0] = x
-                self.reprint_plot_2()
+                self.refresh_plots_signal.emit([2])
         if self.moving_filter[1]:
             self.segundo_click[1] = True
             vb = self.graphicsView_2.plotItem.vb
@@ -1638,7 +1630,7 @@ class Window(QMainWindow, PlotWindow):
                 diff = self.route2['filters'][self.moving_filter_index[1]][1] - self.route2['filters'][self.moving_filter_index[1]][0]
                 self.route2['filters'][self.moving_filter_index[1]][0] = x
                 self.route2['filters'][self.moving_filter_index[1]][1] = x + diff
-                self.reprint_plot_2()
+                self.refresh_plots_signal.emit([2])
 
     def mouse_clicked2(self, event):
         if (self.moving_point[1] or self.moving_vibrato[1] or self.moving_filter[1]) and self.segundo_click[1]:
@@ -1655,7 +1647,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route2['points'].append([x, y])
                 self.route2['points'].sort(key=lambda x: x[0])
                 self.route2['history'].append(['add_point', [x, y]])
-                self.reprint_plot_2()
+                self.refresh_plots_signal.emit([2])
                 self.changes_made()
 
     def onFilterClicked3(self, obj, point, event):
@@ -1720,7 +1712,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route3['filters'].remove(p)
                 self.route3['history'].append(['delete_filter', p])
                 self.changes_made()
-                self.reprint_plot_3()
+                self.refresh_plots_signal.emit([3])
         else:
             self.moving_point[2] = False
             self.moving_vibrato[2] = False
@@ -1758,7 +1750,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route3['vibrato'].remove(p)
                 self.route3['history'].append(['delete_vibrato', p])
                 self.changes_made()
-                self.reprint_plot_3()
+                self.refresh_plots_signal.emit([3])
         else:
             self.moving_point[2] = False
             self.moving_vibrato[2] = False
@@ -1776,7 +1768,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route3['points'].append([x, y])
                 self.route3['points'].sort(key=lambda x: x[0])
                 self.route3['history'].append(['add_point', [x, y]])
-                self.reprint_plot_3()
+                self.refresh_plots_signal.emit([3])
                 self.changes_made()
             elif action == self.addVibrato:
                 data=[x, 0, 0, 0, 0]
@@ -1791,7 +1783,7 @@ class Window(QMainWindow, PlotWindow):
                     self.route3['vibrato'].append([time_i, duration, amp, freq, window_v])
                     self.route3['history'].append(['vibrato', [time_i, duration, amp, freq, window_v]])
                     self.changes_made()
-                    self.reprint_plot_3()
+                    self.refresh_plots_signal.emit([3])
             elif action == self.addFilter:
                 data=[x, x] + [0 for i in range(14)]
                 while True:
@@ -1811,7 +1803,7 @@ class Window(QMainWindow, PlotWindow):
                         try:
                             self.route3['filters'].append([time_i, time_f, filter_choice, params])
                             self.route3['history'].append(['filter', [time_i, time_f, filter_choice, params]])
-                            self.reprint_plot_3()
+                            self.refresh_plots_signal.emit([3])
                             self.changes_made()
                             break
                         except:
@@ -1856,7 +1848,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route3['history'].append(['delete_point', p])
                 self.changes_made()
                 try:
-                    self.reprint_plot_3()
+                    self.refresh_plots_signal.emit([3])
                 except:
                     pass
         else:
@@ -1875,7 +1867,7 @@ class Window(QMainWindow, PlotWindow):
             min_x, max_x = self.find_moving_point_limits(self.route3['points'], self.moving_point_index[2], self.route3['total_t'])
             if x > min_x and x < max_x:
                 self.route3['points'][self.moving_point_index[2]] = [x, y]
-                self.reprint_plot_3()
+                self.refresh_plots_signal.emit([3])
         if self.moving_vibrato[2]:
             self.segundo_click[2] = True
             vb = self.graphicsView_3.plotItem.vb
@@ -1885,7 +1877,7 @@ class Window(QMainWindow, PlotWindow):
             min_x, max_x = self.find_moving_vibrato_limits(self.route3['vibrato'], self.moving_vibrato_index[2], self.route3['total_t'])
             if x >= min_x and x <= max_x:
                 self.route3['vibrato'][self.moving_vibrato_index[2]][0] = x
-                self.reprint_plot_3()
+                self.refresh_plots_signal.emit([3])
         if self.moving_filter[2]:
             self.segundo_click[2] = True
             vb = self.graphicsView_3.plotItem.vb
@@ -1897,7 +1889,7 @@ class Window(QMainWindow, PlotWindow):
                 diff = self.route3['filters'][self.moving_filter_index[2]][1] - self.route3['filters'][self.moving_filter_index[2]][0]
                 self.route3['filters'][self.moving_filter_index[2]][0] = x
                 self.route3['filters'][self.moving_filter_index[2]][1] = x + diff
-                self.reprint_plot_3()
+                self.refresh_plots_signal.emit([3])
 
     def mouse_clicked3(self, event):
         if (self.moving_point[2] or self.moving_vibrato[2] or self.moving_filter[2]) and self.segundo_click[2]:
@@ -1914,7 +1906,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route3['points'].append([x, y])
                 self.route3['points'].sort(key=lambda x: x[0])
                 self.route3['history'].append(['add_point', [x, y]])
-                self.reprint_plot_3()
+                self.refresh_plots_signal.emit([3])
                 self.changes_made()
 
     def onFilterClicked4(self, obj, point, event):
@@ -1979,7 +1971,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route4['filters'].remove(p)
                 self.route4['history'].append(['delete_filter', p])
                 self.changes_made()
-                self.reprint_plot_4()
+                self.refresh_plots_signal.emit([4])
         else:
             self.moving_point[3] = False
             self.moving_vibrato[3] = False
@@ -2017,7 +2009,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route4['vibrato'].remove(p)
                 self.route4['history'].append(['delete_vibrato', p])
                 self.changes_made()
-                self.reprint_plot_4()
+                self.refresh_plots_signal.emit([4])
         else:
             self.moving_point[3] = False
             self.moving_vibrato[3] = False
@@ -2035,7 +2027,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route4['points'].append([x, y])
                 self.route4['points'].sort(key=lambda x: x[0])
                 self.route4['history'].append(['add_point', [x, y]])
-                self.reprint_plot_4()
+                self.refresh_plots_signal.emit([4])
                 self.changes_made()
             elif action == self.addVibrato:
                 data=[x, 0, 0, 0, 0]
@@ -2050,7 +2042,7 @@ class Window(QMainWindow, PlotWindow):
                     self.route4['vibrato'].append([time_i, duration, amp, freq, window_v])
                     self.route4['history'].append(['vibrato', [time_i, duration, amp, freq, window_v]])
                     self.changes_made()
-                    self.reprint_plot_4()
+                    self.refresh_plots_signal.emit([4])
             elif action == self.addFilter:
                 data=[x, x] + [0 for i in range(14)]
                 while True:
@@ -2070,7 +2062,7 @@ class Window(QMainWindow, PlotWindow):
                         try:
                             self.route4['filters'].append([time_i, time_f, filter_choice, params])
                             self.route4['history'].append(['filter', [time_i, time_f, filter_choice, params]])
-                            self.reprint_plot_4()
+                            self.refresh_plots_signal.emit([4])
                             self.changes_made()
                             break
                         except:
@@ -2115,7 +2107,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route4['history'].append(['delete_point', p])
                 self.changes_made()
                 try:
-                    self.reprint_plot_4()
+                    self.refresh_plots_signal.emit([4])
                 except:
                     pass
         else:
@@ -2134,7 +2126,7 @@ class Window(QMainWindow, PlotWindow):
             min_x, max_x = self.find_moving_point_limits(self.route4['points'], self.moving_point_index[3], self.route4['total_t'])
             if x > min_x and x < max_x:
                 self.route4['points'][self.moving_point_index[3]] = [x, y]
-                self.reprint_plot_4()
+                self.refresh_plots_signal.emit([4])
         if self.moving_vibrato[3]:
             self.segundo_click[3] = True
             vb = self.graphicsView_4.plotItem.vb
@@ -2144,7 +2136,7 @@ class Window(QMainWindow, PlotWindow):
             min_x, max_x = self.find_moving_vibrato_limits(self.route4['vibrato'], self.moving_vibrato_index[3], self.route4['total_t'])
             if x >= min_x and x <= max_x:
                 self.route4['vibrato'][self.moving_vibrato_index[3]][0] = x
-                self.reprint_plot_4()
+                self.refresh_plots_signal.emit([4])
         if self.moving_filter[3]:
             self.segundo_click[3] = True
             vb = self.graphicsView_4.plotItem.vb
@@ -2156,7 +2148,7 @@ class Window(QMainWindow, PlotWindow):
                 diff = self.route4['filters'][self.moving_filter_index[3]][1] - self.route4['filters'][self.moving_filter_index[3]][0]
                 self.route4['filters'][self.moving_filter_index[3]][0] = x
                 self.route4['filters'][self.moving_filter_index[3]][1] = x + diff
-                self.reprint_plot_4()
+                self.refresh_plots_signal.emit([4])
 
     def mouse_clicked4(self, event):
         if (self.moving_point[3] or self.moving_vibrato[3] or self.moving_filter[3]) and self.segundo_click[3]:
@@ -2173,7 +2165,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route4['points'].append([x, y])
                 self.route4['points'].sort(key=lambda x: x[0])
                 self.route4['history'].append(['add_point', [x, y]])
-                self.reprint_plot_4()
+                self.refresh_plots_signal.emit([4])
                 self.changes_made()
     
     def onCurveClicked5(self, obj, event):
@@ -2194,7 +2186,7 @@ class Window(QMainWindow, PlotWindow):
                     self.route5['notes'].sort(key=lambda x: x[0])
                     self.route5['history'].append(['add_notes', [new_x, new_y]])
                     self.changes_made()
-                    self.reprint_plot_5()
+                    self.refresh_plots_signal.emit([5])
             elif action == self.addTrill:
                 data = [x, 0, 0, 0]
                 dlg = TrillForm(parent=self, data=data, max_t=self.route5['total_t'])
@@ -2208,7 +2200,7 @@ class Window(QMainWindow, PlotWindow):
                     self.route5['trill'].sort(key=lambda x: x[0])
                     self.route5['history'].append(['add_trill', [time, dist, freq, duration]])
                     self.changes_made()
-                    self.reprint_plot_5()
+                    self.refresh_plots_signal.emit([5])
             elif action == self.openNotesTable:
                 data = [4, 0, self.route, self.route2, self.route3, self.route4, self.route5]
                 dlg = FuncTableForm(parent=self, data=data)
@@ -2246,7 +2238,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route5['history'].append(['delete_notes', p])
                 self.changes_made()
                 try:
-                    self.reprint_plot_5()
+                    self.refresh_plots_signal.emit([5])
                 except:
                     pass
         else:
@@ -2285,7 +2277,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route5['trill'].remove(p)
                 self.route5['history'].append(['delete_trill', p])
                 self.changes_made()
-                self.reprint_plot_5()
+                self.refresh_plots_signal.emit([5])
         else:
             self.moving_point[3] = False
             self.moving_vibrato[4] = False
@@ -2302,11 +2294,11 @@ class Window(QMainWindow, PlotWindow):
                 if y >= 0 and y < 15.75:
                     note = dict_notes[round(y * 2) / 2]
                     self.route5['notes'][self.moving_point_index[4]] = [x, note]
-                    self.reprint_plot_5()
+                    self.refresh_plots_signal.emit([5])
                 elif y >= 15.75:
                     note = dict_notes[17]
                     self.route5['notes'][self.moving_point_index[4]] = [x, note]
-                    self.reprint_plot_5()
+                    self.refresh_plots_signal.emit([5])
         if self.moving_vibrato[4]:
             self.segundo_click[4] = True
             vb = self.graphicsView_5.plotItem.vb
@@ -2316,7 +2308,7 @@ class Window(QMainWindow, PlotWindow):
             min_x, max_x = self.find_moving_trill_limits(self.route5['trill'], self.moving_vibrato_index[4], self.route5['total_t'])
             if x >= min_x and x <= max_x:
                 self.route5['trill'][self.moving_vibrato_index[4]][0] = x
-                self.reprint_plot_5()
+                self.refresh_plots_signal.emit([5])
 
     def mouse_clicked5(self, event):
         if (self.moving_point[4] or self.moving_vibrato[4]) and self.segundo_click[4]:
@@ -2338,7 +2330,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route5['notes'].append([x, note])
                 self.route5['notes'].sort(key=lambda x: x[0])
                 self.route5['history'].append(['add_note', [x, note]])
-                self.reprint_plot_5()
+                self.refresh_plots_signal.emit([5])
                 self.changes_made()
 
     def find_moving_note_limits(self, notes, index, total_t):
@@ -2445,7 +2437,7 @@ class Window(QMainWindow, PlotWindow):
             elif prop == 2:
                 self.route['filters'][index] = params
                 self.route['filters'].sort(key=lambda x: x[0])
-            self.reprint_plot_1()
+            self.refresh_plots_signal.emit([1])
         elif func == 1:
             if prop == 0:
                 self.route2['points'][index] = params
@@ -2456,7 +2448,7 @@ class Window(QMainWindow, PlotWindow):
             elif prop == 2:
                 self.route2['filters'][index] = params
                 self.route2['filters'].sort(key=lambda x: x[0])
-            self.reprint_plot_2()
+            self.refresh_plots_signal.emit([2])
         elif func == 2:
             if prop == 0:
                 self.route3['points'][index] = params
@@ -2467,7 +2459,7 @@ class Window(QMainWindow, PlotWindow):
             elif prop == 2:
                 self.route3['filters'][index] = params
                 self.route3['filters'].sort(key=lambda x: x[0])
-            self.reprint_plot_3()
+            self.refresh_plots_signal.emit([3])
         elif func == 3:
             if prop == 0:
                 self.route4['points'][index] = params
@@ -2478,7 +2470,7 @@ class Window(QMainWindow, PlotWindow):
             elif prop == 2:
                 self.route4['filters'][index] = params
                 self.route4['filters'].sort(key=lambda x: x[0])
-            self.reprint_plot_4()
+            self.refresh_plots_signal.emit([4])
         elif func == 4:
             if prop == 0:
                 self.route5['notes'][index] = params
@@ -2486,7 +2478,7 @@ class Window(QMainWindow, PlotWindow):
             elif prop == 1:
                 self.route5['trill'][index] = params
                 self.route5['trill'].sort(key=lambda x: x[0])
-            self.reprint_plot_5()
+            self.refresh_plots_signal.emit([5])
 
     def delete_item(self, func, prop, index):
         self.changes_made()
@@ -2500,7 +2492,7 @@ class Window(QMainWindow, PlotWindow):
             elif prop == 2:
                 p = self.route['filters'].pop(index)
                 self.route['history'].append(['delete_filter', p])
-            self.reprint_plot_1()
+            self.refresh_plots_signal.emit([1])
         elif func == 1:
             if prop == 0:
                 p = self.route2['points'].pop(index)
@@ -2511,7 +2503,7 @@ class Window(QMainWindow, PlotWindow):
             elif prop == 2:
                 p = self.route2['filters'].pop(index)
                 self.route2['history'].append(['delete_filter', p])
-            self.reprint_plot_2()
+            self.refresh_plots_signal.emit([2])
         elif func == 2:
             if prop == 0:
                 p = self.route3['points'].pop(index)
@@ -2522,7 +2514,7 @@ class Window(QMainWindow, PlotWindow):
             elif prop == 2:
                 p = self.route3['filters'].pop(index)
                 self.route3['history'].append(['delete_filter', p])
-            self.reprint_plot_3()
+            self.refresh_plots_signal.emit([3])
         elif func == 3:
             if prop == 0:
                 p = self.route4['points'].pop(index)
@@ -2533,12 +2525,12 @@ class Window(QMainWindow, PlotWindow):
             elif prop == 2:
                 p = self.route4['filters'].pop(index)
                 self.route4['history'].append(['delete_filter', p])
-            self.reprint_plot_4()
+            self.refresh_plots_signal.emit([4])
         elif func == 4:
             if prop == 0:
                 p = self.route5['notes'].pop(index)
                 self.route5['history'].append(['delete_note', p])
-            self.reprint_plot_5()
+            self.refresh_plots_signal.emit([5])
 
     def add_item(self, func, prop, params, from_func=False):
         if not from_func:
@@ -2556,7 +2548,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route['filters'].append(params)
                 self.route['filters'].sort(key=lambda x: x[0])
                 self.route['history'].append(['filter', params])
-            self.reprint_plot_1()
+            self.refresh_plots_signal.emit([1])
         elif func == 1:
             if prop == 0:
                 self.route2['points'].append(params)
@@ -2570,7 +2562,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route2['filters'].append(params)
                 self.route2['filters'].sort(key=lambda x: x[0])
                 self.route2['history'].append(['filter', params])
-            self.reprint_plot_2()
+            self.refresh_plots_signal.emit([2])
         elif func == 2:
             if prop == 0:
                 self.route3['points'].append(params)
@@ -2584,7 +2576,7 @@ class Window(QMainWindow, PlotWindow):
                 self.route3['filters'].append(params)
                 self.route3['filters'].sort(key=lambda x: x[0])
                 self.route3['history'].append(['filter', params])
-            self.reprint_plot_3()
+            self.refresh_plots_signal.emit([3])
         elif func == 3:
             if prop == 0:
                 self.route4['points'].append(params)
@@ -2598,13 +2590,13 @@ class Window(QMainWindow, PlotWindow):
                 self.route4['filters'].append(params)
                 self.route4['filters'].sort(key=lambda x: x[0])
                 self.route4['history'].append(['filter', params])
-            self.reprint_plot_4()
+            self.refresh_plots_signal.emit([4])
         elif func == 4:
             if prop == 0:
                 self.route5['notes'].append(params)
                 self.route5['notes'].sort(key=lambda x: x[0])
                 self.route5['history'].append(['add_note', params])
-            self.reprint_plot_5()
+            self.refresh_plots_signal.emit([5])
 
     def populate_graph(self):
         self.route = {  
@@ -2646,6 +2638,13 @@ class Window(QMainWindow, PlotWindow):
                         'trill': [],
                         'history': []
                      }
+
+    def reprint_real_func(self):
+        self.r_real.setData(self.t_plot, self.r_plot)
+        self.theta_real.setData(self.t_plot, self.theta_plot)
+        self.offset_real.setData(self.t_plot, self.offset_plot)
+        self.flow_real.setData(self.t_plot, self.flow_plot)
+        self.freq_real.setData(self.t_plot, self.freq_plot)
 
     def reprint_plot_1(self):
         t, f, p, vib, fil = calculate_route(self.route)
