@@ -230,7 +230,7 @@ class VirtualAxis(threading.Thread):
 class AMCIDriver(Process):
     """
     Esta clase interactua con los drivers para los motores AMCI. Define los mensajes a enviar e interpreta la informacion leida desde los mismos.
-    Para instanciar esta clase se pueden definir parámetros de su configuración. Para tener información de que significa cada parámetro referirse al manual de los drivers.
+    Al instanciar esta clase se pueden definir parámetros de su configuración. Para tener información de que significa cada parámetro referirse al manual de los drivers.
     """
     def __init__(self, hostname, running, musician_pipe, comm_pipe, comm_data, virtual_axis_pipe, t0, connected=True, disable_anti_resonance_bit=0, enable_stall_detection_bit=0, use_backplane_proximity_bit=0, use_encoder_bit=0, home_to_encoder_z_pulse=0, input_3_function_bits=0, input_2_function_bits=0, input_1_function_bits=0, output_functionality_bit=0, output_state_control_on_network_lost=0, output_state_on_network_lost=0, read_present_configuration=0, save_configuration=0, binary_input_format=0, binary_output_format=0, binary_endian=0, input_3_active_level=0, input_2_active_level=0, input_1_active_level=0, starting_speed=1, motors_step_turn=1000, hybrid_control_gain=1, encoder_pulses_turn=1000, idle_current_percentage=30, motor_current=40, current_loop_gain=5, homing_slow_speed=200, verbose=False, virtual_axis_follow_acceleration=50, virtual_axis_follow_deceleration=50, home=True, virtual_axis_proportional_coef=1, Kp=0, Ki=5, Kd=0.01, Kp_vel=0, Ki_vel=0, Kd_vel=0):
         Process.__init__(self) # Initialize the threading superclass
@@ -1106,15 +1106,18 @@ class AMCIDriver(Process):
         return command
 
 class FlowControllerDriver(Process):
+    """
+    Esta clase interactua con el controlador de flujo. Define los mensajes a enviar (principalmente el setpoint) e interpreta la informacion leida desde este.
+    """
     def __init__(self, hostname, running, t0, mus_pipe, comm_pipe, comm_data, axis_pipe, connected=True, verbose=False): # 
         Process.__init__(self) # Initialize the threading superclass
         self.hostname = hostname
         self.running = running
         self.t0 = t0
-        self.mus_pipe = mus_pipe
-        self.axis_pipe = axis_pipe
-        self.comm_pipe = comm_pipe
-        self.comm_data = comm_data
+        self.mus_pipe = mus_pipe # pipe que conecta con el musico
+        self.axis_pipe = axis_pipe # pipe que va al eje (flujo) virtual
+        self.comm_pipe = comm_pipe # pipe que conecta con la central de comunicaciones
+        self.comm_data = comm_data # data compartida entre procesos
         self.connected = connected
         self.virtual_flow = None
 
@@ -1129,51 +1132,56 @@ class FlowControllerDriver(Process):
             self.comm_pipe.send(["explicit_conn", self.hostname, 26*8, 4*8, 26, 4, ethernetip.EtherNetIP.ENIP_IO_TYPE_INPUT, 101, ethernetip.EtherNetIP.ENIP_IO_TYPE_OUTPUT, 100])
 
     def run(self):
+        ## Instanciamos e iniciamos el flujo virtual
         self.virtual_flow = VirtualFlow(self.running, 0.01, self.t0, self.axis_pipe, verbose=False)
         self.virtual_flow.start()
+        ## avisamos que el driver esta funcionando (para saltar el start-up menu)
         self.mus_pipe.send(["flow_driver_started"])
         if self.connected:
             self.comm_pipe.send(["registerSession", self.hostname])
-            #time.sleep(0.1)
             self.comm_pipe.send(["sendFwdOpenReq", self.hostname, 101, 100, 0x6e, 50, 50, ethernetip.ForwardOpenReq.FORWARD_OPEN_CONN_PRIO_HIGH])
 
+            ## esperamos que se haya registrado la linea de comunicación en la data compartida
             while self.hostname not in " ".join(self.comm_data.keys()):
                 pass
-
+            
+            ## Entramos en el loop donde quedará por el resto del programa
             while self.running.is_set():
-                time.sleep(0.01)
-                self.read_input(read_output=False)
-                self.set_output(self.virtual_flow.flow)
+                time.sleep(0.01) # tasa de adquisición de datos
+                self.read_input(read_output=False) # leemos la información entregada desde el dispositivo
+                self.set_output(self.virtual_flow.flow) # se envía el set-point al dispositivo
             
             self.comm_pipe.send(["stopProduce", self.hostname, 101, 100, 0x6e])
     
-    # def send_ref(self, value):
-    #     b = bytearray(4)
-    #     struct.pack_into('f', b, 0, value)
-        
-    #     return self.C1.setAttrSingle(0x04, 100, 0x03, b)
-    
-    def set_output(self, value):
-        value = min(50, max(0, value))
+    def set_output(self, value): # modifica la lista que se envia al controlador de flujo para cambiar el setpoint al especificado en value
+        value = min(50, max(0, value)) # primero saturamos entre 0 y 50 (limites del controlador)
+
+        # empaquetamos el valor en 4 bytes con forma de float
         b = bytearray(4)
         struct.pack_into('f', b, 0, value)
         
+        # lo escribimos en su forma binaria
         words = []
         for byte in b:
             words.append(''.join(format(byte, '08b'))[::-1])
         
+        # creamos una lista de su representacion binaria con bools
         l = [0 for i in range(4*8)]
         for i in range(4):
             for j in range(8):
                 l[i*8+j] = int(words[i][j]) == 1
-        self.comm_data[self.hostname + '_out'] = l
 
-    def read_input(self, read_output=False):
+        self.comm_data[self.hostname + '_out'] = l # reemplazamos la lista que se envia al controlador de flujo
+
+    def read_input(self, read_output=False): # interpreta la entrada del controlador de flujo
+        # primero transformamos la lista de bools que recibimos (en este formato lo entrega la librería de ethernet ip) en bytes
         words = []
         for w in range(26):
             words.append(int("".join(["1" if self.comm_data[self.hostname + '_in'][i] else "0" for i in range(w*8+7, w*8-1, -1)]), 2))
         b = bytearray(26)
         struct.pack_into('26B', b, 0, *words)
+
+        # luego interpretamos estos bytes de acuerdo al formato y cantidad de bytes para cada dato
         [g, s, ap, ft, vf, mf, mfsp] = struct.unpack('<HIfffff', b)
 
         self.mass_flow_reading.value = mf
@@ -1181,10 +1189,8 @@ class FlowControllerDriver(Process):
         self.temperature_reading.value = ft
         self.absolute_preasure_reading.value = ap
         self.mass_flow_set_point_reading.value = mfsp
-        #print(ft)
-        # if s != 0:
-        #     print(s)
-        if read_output:
+
+        if read_output: # si tambien se quiere leer el output
             words2 = []
             for w in range(4):
                 words2.append(int("".join(["1" if self.comm_data[self.hostname + '_out'][i] else "0" for i in range(w*8+7, w*8-1, -1)]), 2))
@@ -1195,25 +1201,34 @@ class FlowControllerDriver(Process):
             print(g, s, ap, ft, vf, mf, mfsp, ref)
 
     def change_controlled_var(self, value):
+        # TODO: implementar
         pass
 
     def change_control_loop(self, value):
+        # TODO: implementar
         pass
 
     def change_kp(self, value):
+        # TODO: implementar
         pass
 
     def change_ki(self, value):
+        # TODO: implementar
         pass
 
     def change_kd(self, value):
+        # TODO: implementar
         pass
 
 class VirtualFlow(threading.Thread):
+    """
+    Esta clase se usa para simular el flujo virtual.
+    Es instanciada dentro del drivers del controlador de flujo, y queda corriendo como un thread, el que actualiza e informa el flujo deseado en tiempo real.
+    """
     def __init__(self, running, interval, t0, pipe_conn, verbose=False):
         threading.Thread.__init__(self) # Initialize the threading superclass
         self.running = running
-        self.ref = [(0,0)]
+        self.ref = [(0,0)] # la ruta es una lista donde cada elemento es de la forma (tiempo, flujo)
         self.last_pos = 0
         self.interval = interval
         self.t0 = t0
@@ -1224,55 +1239,48 @@ class VirtualFlow(threading.Thread):
         self.vibrato_freq = 0.0
         
     def run(self):
-        print("Virtual Flow running")
-        # f = 1
-        # while self.running.is_set():
-        #     t = time.time() - self.t0
-        #     self.flow = int(15 + 15 * np.sin(2*np.pi * f * t))
-        #     time.sleep(0.01)
-        
-        while self.running.is_set():
+        while self.running.is_set(): # corre durante toda la ejecución principal
             t = time.time() - self.t0
-            self.flow = self.get_ref(t)
+            self.flow = self.get_ref(t) # de acuerdo al tiempo actual actualiza el flujo a partir de la ruta
             if not (type(self.flow) == float or type(self.flow) == int or type(self.flow) == np.float64):
                 print(type(self.flow), self.flow)
             if self.verbose:
                 print(t, self.flow)
-            self.update_ref(t)
-            if self.pipe_conn.poll(self.interval):
+            self.update_ref(t) # actualiza la lista eliminando los datos de tiempo menor al actual
+            if self.pipe_conn.poll(self.interval): # escucha si hay alguna instruccion. Si no lo hay luego de los self.interval ms avanza
                 message = self.pipe_conn.recv()
-                print("Message received in virtual flow:", message[0])
+                #print("Message received in virtual flow:", message[0])
                 if message[0] == "get_ref":
                     self.get_ref(message[1])
                 elif message[0] == "update_ref":
                     self.update_ref(message[1])
-                elif message[0] == "merge_ref":
+                elif message[0] == "merge_ref": # se envia esta instrucción desde un proceso distinto para actualizar la ruta referencia
                     self.vibrato_amp = message[2]
                     self.vibrato_freq = message[3]
                     self.merge_ref(message[1])
-                elif message[0] == "stop":
+                elif message[0] == "stop": # se envia esta instrucción desde un proceso distinto para detener el flujo (soft stop)
                     self.stop()
 
-    def get_ref(self, t):
-        if self.ref[-1][0] > t:
-            ramp = get_value_from_func(t, self.ref, approx=False)
-            vibr = ramp * self.vibrato_amp * sin(t * 2*pi * self.vibrato_freq)
-            flow = max(0,min(50, ramp+vibr))
+    def get_ref(self, t): # actualiza el flujo para el tiempo actual de acuerdo a la ruta referencia
+        if self.ref[-1][0] > t: # si la ruta esta definida hasta un t_final > t_actual
+            ramp = get_value_from_func(t, self.ref, approx=False) # busca el elemento de la ruta cuyo tiempo se acerque mas al actual
+            vibr = ramp * self.vibrato_amp * sin(t * 2*pi * self.vibrato_freq) # calcula el vibrato de acuerdo a la amplitud especificada y la frecuencia
+            flow = max(0,min(50, ramp+vibr)) # sumamos y saturamos
         else:
-            ramp = self.ref[-1][1]
+            ramp = self.ref[-1][1] # si t_actual > t_final de la ruta referencia el flujo se mantiene y se suma el vibrato
             vibr = ramp * self.vibrato_amp * sin(t * 2*pi * self.vibrato_freq)
             flow = max(0,min(50, ramp+vibr))
         return flow
 
-    def update_ref(self, t):
+    def update_ref(self, t): # actualiza la ruta borrando todos los elementos con t < t_actual (dejando al menos un elemento en la lista)
         while self.ref[0][0] < t and len(self.ref) > 1:
             self.ref.pop(0)
 
-    def merge_ref(self, new_ref):
+    def merge_ref(self, new_ref): # agrega o reemplaza elementos a la ruta
         t_change = new_ref[0][0]
-        if self.ref[-1][0] < t_change:
+        if self.ref[-1][0] < t_change: # si el t del ultimo elemento de la ruta anterior es menor al primero de la ruta que se quiere agregar, simplemente se agrega
             self.ref += new_ref
-        else:
+        else: # si hay solapado entre las rutas, se reemplaza la anterior por la nueva.
             i = 0
             while self.ref[i][0] < t_change:
                 i += 1
@@ -1280,14 +1288,18 @@ class VirtualFlow(threading.Thread):
                 self.ref.pop()
             self.ref += new_ref
 
-    def stop(self):
+    def stop(self): # para frenar rapidamente el flujo (con un soft stop) se detiene el flujo virtual borrando toda la ruta cargada, dejando el flujo en 0
         self.ref = [(0,0)]
 
 class VirtualFingers(threading.Thread):
+    """
+    Esta clase se usa para simular el dedaje en forma virtual.
+    Es instanciada dentro del drivers de los dedos, y queda corriendo como un thread, el que actualiza e informa la nota a digitar en tiempo real.
+    """
     def __init__(self, running, interval, t0, pipe_end, verbose=False):
         threading.Thread.__init__(self) # Initialize the threading superclass self.running, 0.05, self.t0, self.ref_pipe
         self.running = running
-        self.ref = [(0,0)]
+        self.ref = [(0,0)] # la ruta es una lista donde cada elemento es de la forma (tiempo, nota)
         self.t0 = t0
         self.verbose = verbose
         self.interval = interval
@@ -1295,43 +1307,42 @@ class VirtualFingers(threading.Thread):
         self.note = 0
         
     def run(self):
-        while self.running.is_set():
+        while self.running.is_set(): # corre durante toda la ejecución principal
             t = time.time() - self.t0
-            self.note = self.get_ref(t)
+            self.note = self.get_ref(t) # de acuerdo al tiempo actual actualiza la nota a partir de la ruta
             if self.verbose:
                 print(t, self.note)
-            self.update_ref(t)
-            if self.pipe_end.poll(self.interval):
+            self.update_ref(t) # actualiza la lista eliminando los datos de tiempo menor al actual
+            if self.pipe_end.poll(self.interval): # escucha si hay alguna instruccion. Si no lo hay luego de los self.interval ms avanza
                 message = self.pipe_end.recv()
-                print("Message received in virtual fingers:", message[0])
+                # print("Message received in virtual fingers:", message[0])
                 if message[0] == "get_ref":
                     pos = self.get_ref(message[1])
                 elif message[0] == "update_ref":
                     self.update_ref(message[1])
-                elif message[0] == "merge_ref":
+                elif message[0] == "merge_ref": # se envia esta instrucción desde un proceso distinto para actualizar la ruta referencia
                     self.merge_ref(message[1])
-                elif message[0] == "stop":
+                elif message[0] == "stop": # se envia esta instrucción desde un proceso distinto para detener el cambio de notas
                     self.stop()
 
-    def get_ref(self, t):
-        if self.ref[-1][0] > t:
+    def get_ref(self, t): # actualiza la nota a digitar para el tiempo actual de acuerdo a la ruta referencia
+        if self.ref[-1][0] > t: # si la ruta esta definida hasta un t_final > t_actual
             for i in self.ref:
                 if i[0] > t:
-                    return i[1]
+                    return i[1] # busca el primer elemento de la ruta cuyo tiempo sea mayor al actual. A diferencia de los otros ejes virtuales, las notas son discretas por lo que no es necesario hacer una interpolacion
         else:
-            pos = self.ref[-1][1]
+            pos = self.ref[-1][1] # si t_actual > t_final de la ruta referencia la nota se mantiene
         return pos
 
-    def update_ref(self, t):
+    def update_ref(self, t): # actualiza la ruta borrando todos los elementos con t < t_actual (dejando al menos un elemento en la lista)
         while self.ref[0][0] < t and len(self.ref) > 1:
             self.ref.pop(0)
 
-    def merge_ref(self, new_ref):
-        #print("Merging:", new_ref)
+    def merge_ref(self, new_ref): # agrega o reemplaza elementos a la ruta
         t_change = new_ref[0][0]
-        if self.ref[-1][0] < t_change:
+        if self.ref[-1][0] < t_change:  # si el t del ultimo elemento de la ruta anterior es menor al primero de la ruta que se quiere agregar, simplemente se agrega
             self.ref += new_ref
-        else:
+        else: # si hay solapado entre las rutas, se reemplaza la anterior por la nueva.
             i = 0
             while self.ref[i][0] < t_change:
                 i += 1
@@ -1339,16 +1350,19 @@ class VirtualFingers(threading.Thread):
                 self.ref.pop()
             self.ref += new_ref
     
-    def stop(self):
+    def stop(self): # para eliminar los siguientes cambios de nota, elimina toda la ruta y deja el dedaje en la última nota tocada
         self.ref = [(0,self.note)]
 
 class PressureSensor(Process):
+    """
+    Esta clase interactua con el sensor de presion. Interpreta la informacion leida desde este.
+    """
     def __init__(self, hostname, running, musician_pipe, comm_pipe, comm_data, connected=False, verbose=False):
         Process.__init__(self)
         self.running = running
-        self.musician_pipe = musician_pipe
-        self.comm_pipe = comm_pipe
-        self.comm_data = comm_data
+        self.musician_pipe = musician_pipe # pipe que conecta con el musico
+        self.comm_pipe = comm_pipe # pipe que conecta con la central de comunicaciones
+        self.comm_data = comm_data # data compartida entre procesos
         self.connected = connected
         self.verbose = verbose
         self.pressure = Value("d", 0.0)
@@ -1359,34 +1373,39 @@ class PressureSensor(Process):
             self.comm_pipe.send(["explicit_conn", self.hostname, 0, 4*8, 10, 4, ethernetip.EtherNetIP.ENIP_IO_TYPE_INPUT, 101, ethernetip.EtherNetIP.ENIP_IO_TYPE_OUTPUT, 100])
 
     def run(self):
-        self.musician_pipe.send(["pressure_sensor_started"])
+        self.musician_pipe.send(["pressure_sensor_started"]) ## avisamos que el driver esta funcionando (para saltar el start-up menu)
         if self.connected:
             self.comm_pipe.send(["registerSession", self.hostname])
-            #time.sleep(0.1)
             self.comm_pipe.send(["sendFwdOpenReq", self.hostname, 101, 100, 0x6e, 50, 50, ethernetip.ForwardOpenReq.FORWARD_OPEN_CONN_PRIO_LOW])
             
+            ## esperamos que se haya registrado la linea de comunicación en la data compartida
             while self.hostname not in " ".join(self.comm_data.keys()):
                 pass
-
-            while self.running.is_set():
-                time.sleep(0.01)
-                self.read_input()
             
-            self.comm_pipe.send(["stopProduce", self.hostname, 101, 100, 0x6e])
+            ## loop en el que se queda el resto del programa
+            while self.running.is_set():
+                time.sleep(0.01) # tasa de adquisicion de datos
+                self.read_input() # leemos el input
+            
+            self.comm_pipe.send(["stopProduce", self.hostname, 101, 100, 0x6e]) # cerramos la linea de comunicacion
 
-    def read_input(self):
+    def read_input(self): # interpreta el input que entrega el dispositivo
         try:
+            # primero transformamos la lista de bools que recibimos (en este formato lo entrega la librería de ethernet ip) en bytes
             words = []
             for w in range(10):
                 words.append(int("".join(["1" if self.comm_data[self.hostname + '_in'][i] else "0" for i in range(w*8+7, w*8-1, -1)]), 2))
             b = bytearray(10)
             struct.pack_into('10B', b, 0, *words)
+
+            # luego interpretamos estos bytes de acuerdo al formato y cantidad de bytes para cada dato
             [g, s, ap] = struct.unpack('<HIf', b)
 
             self.pressure.value = ap
         except:
             print("Hubo un error en la lectura del input del sensor de presion")
 
+# diccionario con la digitación de notas para la flauta traversa. Las notas que no estan es porque no es posible digitarlas con los actuadores disponibles
 flute_dict = {#'C3':  '00000 0000',
               #'C#3': '00000 0000',
               'D3':  '11110 1110',
@@ -1425,6 +1444,7 @@ flute_dict = {#'C3':  '00000 0000',
               #'B5':  '00000 0000',
               'C6':  '10111 1000'}
 
+# diccionario con la digitación de notas para la quena
 quena_dict = {'G3':  '00 1111111',
               'G#3': '00 0000000',
               'A3':  '00 1111110',
@@ -1462,6 +1482,7 @@ quena_dict = {'G3':  '00 1111111',
               'F6':  '00 0100000',
               'F#6': '00 1111100'}
 
+# diccionario de testeo donde solo se activa un actuador a la vez
 test_dict = {'1': '000000001',
              '2': '000000010',
              '3': '000000100',
@@ -1473,6 +1494,7 @@ test_dict = {'1': '000000001',
              '9': '100000000',
              '0': '000000000'}
 
+# diccionario de diccionarios de digitación, de acuerdo al intrumento seleccionado
 instrument_dicts = {'flute': flute_dict,
                     'quena': quena_dict,
                     'test':  test_dict}
