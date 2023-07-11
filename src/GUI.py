@@ -443,14 +443,14 @@ class Window(QMainWindow, PlotWindow):
         self.ps_flt = signal.firwin(numtaps=n, cutoff=fc, window="hamming", pass_zero="lowpass", fs=Fs)
         self.ps_A = [1] +  [0 for i in range(n-1)]
 
-        # Evento que señala cuando se esta tocando una partitura (para hacer el cambio automatico de nota)
+        # Evento que señala cuando se esta tocando una partitura mientras se controla el robot con el comando de ps move (para hacer el cambio automatico de nota)
         self.ps_playing_tune = threading.Event()
 
-        self.ps_playing = False
-        self.ps_last_Btn_MOVE = False
-        self.ps_last_Btn_CROSS = False
-        self.ps_last_Btn_CIRCLE = False
-        self.ps_melodia = []
+        self.ps_playing = False # este bool dice si el robot esta siendo controlado por el usuario mediante el movimiento del control. El usuario puede activarlo y desactivarlo apretando el boton Move (boton del centro del control)
+        self.ps_last_Btn_MOVE = False # se usa para detectar cambios de estado del Btn_MOVE
+        self.ps_last_Btn_CROSS = False # se usa para detectar cambios de estado del Btn_CROSS
+        self.ps_last_Btn_CIRCLE = False # se usa para detectar cambios de estado del Btn_CIRCLE
+        self.ps_melodia = [] # lista donde se agregan todas las notas que estan escritas en la partitura al momento de ejecutar el script del control del robot mediante ps move. El usuario despues puede avanzar nota por nota apretando el boton Btn_CROSS o activar un thread que las empieza a pasar de forma automatica apretando el boton Btn_CIRCLE
         for note in self.route5["notes"]:
             self.ps_melodia.append(note[1])
         self.ps_melodia_index = 0
@@ -461,23 +461,29 @@ class Window(QMainWindow, PlotWindow):
             output = process.stdout.readline().decode("utf-8").strip()
             
             # Comprobar si se ha alcanzado el estado final
-            if output == "estado_final":
+            if output == "estado_final": # el programa imprime estado_final cuando se cierra. Esto permite salir del loop cuando se cierra la pestaña del ps move
+                self.process_running.clear()
                 break
             
             # Hacer algo con el estado
             palabras = output.split()
+            # el script va informando dos cosas: state y state2. El primero tiene informacion de los sensores del control (acelerometros, giroscopios) asi como sus botones. El segundo tiene información del tracking de los controles. Los valores se entregan separados por espacios. 
             if palabras[0] == "state":
-                self.ps_serial1 = palabras[1]
-                self.ps_trigger_v = int(palabras[2]) / 255
+                self.ps_serial1 = palabras[1] ## el primer valor informa cual de los dos controles esta siendo medido. El programa solo informa de uno de los dos, porque el otro solo se usa en el trackeo. El que se mide es el que representa la boca del robot y es el que el usuario maneja con la mano.
+                self.ps_trigger_v = int(palabras[2]) / 255 # cuanto se presiona el trigger del control (el boton de atras) normalizado
+                ## acelerometro
                 self.ps_accel_x = int(palabras[3]) / 4500
                 self.ps_accel_y = int(palabras[4]) / 4500
                 self.ps_accel_z = int(palabras[5]) / 4500
+                ## Giroscopio
                 self.ps_gyro_x = int(palabras[6]) / 4500
                 self.ps_gyro_y = int(palabras[7]) / 4500
                 self.ps_gyro_z = int(palabras[8]) / 4500
+                ## Magnetometro
                 self.ps_magneto_x = int(palabras[9]) / 255
                 self.ps_magneto_y = int(palabras[10]) / 255
                 self.ps_magneto_z = int(palabras[11]) / 255
+                ## Botones
                 botones = int(palabras[12], 16)
                 self.ps_Btn_TRIANGLE = botones & 1 << 4 != 0
                 self.ps_Btn_CIRCLE = botones & 1 << 5 != 0
@@ -491,16 +497,16 @@ class Window(QMainWindow, PlotWindow):
                 self.ps_Btn_MOVE = botones & 1 << 19 != 0
                 self.ps_Btn_T = botones & 1 << 20 != 0
 
-                if self.ps_Btn_MOVE and not self.ps_last_Btn_MOVE:
+                if self.ps_Btn_MOVE and not self.ps_last_Btn_MOVE: # si se apreta el boton move cambia el estado del control del robot (empieza a seguir lo que se le pide de acuerdo al movimiento del control o deja de seguirlo)
                     self.ps_playing = not self.ps_playing
-                if self.ps_Btn_CIRCLE and not self.ps_last_Btn_CIRCLE:
+                if self.ps_Btn_CIRCLE and not self.ps_last_Btn_CIRCLE: # si se apreta el boton circulo se comienza o se deja de tocar en forma automatica las notas de la melodia
                     if self.ps_playing_tune.is_set():
                         self.ps_playing_tune.clear()
                     else:
                         self.ps_playing_tune.set()
                         thread2 = threading.Thread(target=self.ps_play_tune)
                         thread2.start()
-                if self.ps_Btn_CROSS and not self.ps_last_Btn_CROSS:
+                if self.ps_Btn_CROSS and not self.ps_last_Btn_CROSS: # si se apreta cross se pueden cambiar las notas de la melodia de forma manual (una a una)
                     self.ps_melodia_index = (self.ps_melodia_index + 1) % len(self.ps_melodia)
                     if len(self.ps_melodia):
                         self.musician_pipe.send(['execute_fingers_action', dict_notes_rev[self.ps_melodia[self.ps_melodia_index]], False])
@@ -508,24 +514,23 @@ class Window(QMainWindow, PlotWindow):
                 self.ps_last_Btn_MOVE = self.ps_Btn_MOVE
                 self.ps_last_Btn_CROSS = self.ps_Btn_CROSS
                 self.ps_last_Btn_CIRCLE = self.ps_Btn_CIRCLE
-                #self.request_gui_update.emit()
             elif palabras[0] == "state2":
-                if palabras[1] == self.ps_serial1:
-                    self.ps_tracked1 = palabras[2] == "1"
+                if palabras[1] == self.ps_serial1: # si la informacion que entrega es del control que representa la boca
+                    self.ps_tracked1 = palabras[2] == "1" # si el control se encuentra en la imagen, este valor es 1 y se informa su posicion
                     if self.ps_tracked1:
                         self.ps_x1 = float(palabras[3])
                         self.ps_y1 = float(palabras[4])
                         self.ps_r1 = float(palabras[5])
-                else:
+                else: # si la informacion que entrega es del control que representa el bisel de la flauta
                     self.ps_serial2 = palabras[1]
-                    self.ps_tracked2 = palabras[2] == "1"
+                    self.ps_tracked2 = palabras[2] == "1" # si el control se encuentra en la imagen, este valor es 1 y se informa su posicion
                     if self.ps_tracked2:
                         self.ps_x2 = float(palabras[3])
                         self.ps_y2 = float(palabras[4])
                         self.ps_r2 = float(palabras[5])
-            if self.ps_tracked1 and self.ps_tracked2 and self.ps_playing:
-                flow = self.ps_trigger_v*50
-                if self.ps_Btn_SQUARE:
+            if self.ps_tracked1 and self.ps_tracked2 and self.ps_playing: # si ambos controles estan siendo trackeados y se tiene activado ps_playing, entonces se mueve el robot conforme a lo que se pide
+                flow = self.ps_trigger_v*50 # el flujo se indica con el trigger (más presionado es más flujo)
+                if self.ps_Btn_SQUARE: # si el usuario apreta cuadrado se agrega un vibrato. Sin embargo no es posible modificar su amplitud ni su frecuencia
                     flow += flow*0.1*np.sin(2*np.pi*5*time())
                 ## a partir de  x, z, self.ps_accel_y, xf y zf, las posiciones de los comandos de ps move que representan la boca del robot y el bisel de la flauta (entregadas como pixeles en la imagen), se escalan los valores para dirigir el movimiento del robot
                 alpha = -self.ps_accel_y*45
@@ -533,23 +538,23 @@ class Window(QMainWindow, PlotWindow):
                 of = of/25 # cada px de la imagen se escala en 1/25 para el offset
                 l  = max(0,l-20) / 25 # cada px de la imagen se escala en 1/25 para el largo del jet
 
-                self.ps_theta_hist = np.hstack([self.ps_theta_hist[1:], theta])
-                theta_filtrado = signal.lfilter(self.ps_flt, self.ps_A, self.ps_theta_hist)
-                self.ps_l_hist = np.hstack([self.ps_l_hist[1:], l])
+                self.ps_theta_hist = np.hstack([self.ps_theta_hist[1:], theta]) # actualizamos la lista de los ultimos valores para theta
+                theta_filtrado = signal.lfilter(self.ps_flt, self.ps_A, self.ps_theta_hist) # aplicamos un filtro pasa bajos para suavizar los cambios. El desfase de grupo no debe ser muy grande para que no se demore tanto en reaccionar el robot
+                self.ps_l_hist = np.hstack([self.ps_l_hist[1:], l]) # mismo procedimiento para l y offset
                 l_filtrado = signal.lfilter(self.ps_flt, self.ps_A, self.ps_l_hist)
                 self.ps_of_hist = np.hstack([self.ps_of_hist[1:], of])
                 of_filtrado = signal.lfilter(self.ps_flt, self.ps_A, self.ps_of_hist)
 
-                desired_state = State(l_filtrado[-1], theta_filtrado[-1], of_filtrado[-1], flow)
+                desired_state = State(l_filtrado[-1], theta_filtrado[-1], of_filtrado[-1], flow) # se crea un estado referencia, con los valores filtrados
                 self.musician_pipe.send(["move_to_final", desired_state])
-            elif self.ps_tracked1 and self.ps_tracked2:
+            elif self.ps_tracked1 and self.ps_tracked2: # si no se esta persiguiendo el control (ps_playing = False), pero se tiene un trackeo de los controles, igual se acumula su historia. Así cuando se quiere empezar a seguir no hay problemas con discontinuidades por el filtro
                 self.ps_theta_hist = np.hstack([self.ps_theta_hist[1:], self.ps_theta_hist[-1]])
                 self.ps_l_hist = np.hstack([self.ps_l_hist[1:], self.ps_l_hist[-1]])
                 self.ps_of_hist = np.hstack([self.ps_of_hist[1:], self.ps_of_hist[-1]])
             
 
         # Esperar a que el proceso C termine
-        process.kill()
+        process.kill() # si se sale del loop (porque se cierra la aplicacion por ejemplo) se termina el proceso
         self.ps_tracked1 = False
         self.ps_tracked2 = False
         self.ps_serial1 = ""
@@ -559,32 +564,34 @@ class Window(QMainWindow, PlotWindow):
         return_code = process.returncode
         print("Programa C terminado con código de salida:", return_code)
 
-    def undo(self):
-        if len(self.undo_list) >= 2:
-            self.redo_list.append(self.undo_list.pop())
-            r = self.get_copy_of_routes(self.undo_list[-1][0], self.undo_list[-1][1], self.undo_list[-1][2], self.undo_list[-1][3], self.undo_list[-1][4])
+    def undo(self): # vuelve al estado anterior de la partitura (antes del ultimo cambio)
+        if len(self.undo_list) >= 2: # la lista self.undo_list tiene como su ultimo elemento el estado actual, por lo tanto para volver atras tiene que haber al menos 2 elementos en la lista
+            self.redo_list.append(self.undo_list.pop()) # sacamos de la lista de undo el estado actual y lo agregamos a la lista de redo
+            r = self.get_copy_of_routes(self.undo_list[-1][0], self.undo_list[-1][1], self.undo_list[-1][2], self.undo_list[-1][3], self.undo_list[-1][4]) # hacemos una copia del estado anterior
+            # y asignamos este estado como el estado actual
             self.route = r[0]
             self.route2 = r[1]
             self.route3 = r[2]
             self.route4 = r[3]
             self.route5 = r[4]
-            self.refresh_plots_signal.emit([1,2,3,4,5])
-            self.changes_made(from_hist=True)
+            self.refresh_plots_signal.emit([1,2,3,4,5]) # se actualizan los graficos
+            self.changes_made(from_hist=True) # y se informa que hubo cambios
 
-    def redo(self):
-        if len(self.redo_list) >= 1:
-            to = self.redo_list.pop()
-            self.undo_list.append(to)
-            r = self.get_copy_of_routes(to[0], to[1], to[2], to[3], to[4])
-            self.route = r[0]
+    def redo(self): # vuelve al estado antes del undo
+        if len(self.redo_list) >= 1: # a diferencia de la lista del undo, redo_list no contiene el estado actual
+            to = self.redo_list.pop() # sacamos el ultimo elemento de la lista
+            self.undo_list.append(to) # y lo agregamos a la lista del undo. Este será el estado nuevo
+            r = self.get_copy_of_routes(to[0], to[1], to[2], to[3], to[4]) # creamos una copia
+            # y lo asignamos como el estado actual
+            self.route = r[0] 
             self.route2 = r[1]
             self.route3 = r[2]
             self.route4 = r[3]
             self.route5 = r[4]
-            self.refresh_plots_signal.emit([1,2,3,4,5])
-            self.changes_made(from_hist=True)
+            self.refresh_plots_signal.emit([1,2,3,4,5]) # se actualizan los graficos
+            self.changes_made(from_hist=True) # y se informa que hubo cambios
 
-    def change_to_joint_space(self):
+    def change_to_joint_space(self): # cambia el espacio de instruccion del de la tarea al de las junturas. Ahora la trayectoria que se escriba en el gráfico de mas arriba se instruye directamente al eje x, el de almedio al eje z y el de abajo al eje alpha. 
         self.space_of_instruction = 1
         self.graphicsView.setLabel('left', "X", units='mm')
         self.graphicsView_2.setLabel('left', "Z", units='mm')
@@ -594,7 +601,7 @@ class Window(QMainWindow, PlotWindow):
         self.checkBox_3.setText("Alpha")
         # self.seeMotorRefsButton.setText(u"See r, \u03b8 and o")
 
-    def change_to_task_space(self):
+    def change_to_task_space(self): # cambia el espacio de instruccion del de las junturas al de la tarea. Ahora la trayectoria que se escriba en el gráfico de mas arriba representa l, el de almedio theta y el de abajo el offset. 
         self.space_of_instruction = 0
         self.graphicsView.setLabel('left', 'r', units='mm')
         self.graphicsView_2.setLabel('left', u"\u03b8", units='°')
@@ -604,108 +611,105 @@ class Window(QMainWindow, PlotWindow):
         self.checkBox_3.setText("Offset")
         # self.seeMotorRefsButton.setText("See X, Z and Alpha")
 
-    def soft_stop(self):
+    def soft_stop(self): # detiene los movimientos que se esten realizando y lleva el flujo a cero
         self.musician_pipe.send(["stop"])
-        if self.playing.is_set():
+        if self.playing.is_set(): # si se estaba tocando una melodía, tambien se detiene
             self.stop()
 
-    def open_manual_control(self):
+    def open_manual_control(self): # abre la ventana con los controles para manejar de forma manual el robot
         manual_control = ManualWindow(self.app, self.musician_pipe, self.data, parent=self)
         manual_control.setWindowTitle("Manual Control")
         manual_control.show()
 
-    def clear_plot(self):
-        self.r_real.setData([], [])
-        self.theta_real.setData([], [])
-        self.offset_real.setData([], [])
-        self.flow_real.setData([], [])
-        self.freq_real.setData([], [])
-        self.clearPlotButton.setEnabled(False)
-        
-    def go_to_coursor(self):
-        flow_route = []
-        x_route = []
-        z_route = []
-        alpha_route = []
-        notes = []
-
-        Fs = self.route['total_t']
-        t, f_flow, p, vib, fil = calculate_route(self.route4)
-        t, f_notes, xp, yp, tx, ty = calculate_notes_route(self.route5)
-        ti_index = int(len(t) * self.horizontalSlider.value() / 100)
-
-        if self.space_of_instruction == 0:
-            t, f_r, p, vib, fil = calculate_route(self.route)
-            t, f_theta, p, vib, fil = calculate_route(self.route2)
-            t, f_offset, p, vib, fil = calculate_route(self.route3)
-            x_pos_ref, z_pos_ref, alpha_pos_ref = change_to_joint_space(f_r, f_theta, f_offset)
-            desired_state = State(f_r[ti_index], f_theta[ti_index], f_offset[ti_index], 0)
-
-        elif self.space_of_instruction == 1:
-            t, x_pos_ref, p, vib, fil = calculate_route(self.route)
-            t, z_pos_ref, p, vib, fil = calculate_route(self.route2)
-            t, alpha_pos_ref, p, vib, fil = calculate_route(self.route3)
-            desired_state = State(0, 0, 0, 0)
-            desired_state.x = x_pos_ref[ti_index]
-            desired_state.z = z_pos_ref[ti_index]
-            desired_state.alpha = alpha_pos_ref[ti_index]
-
-        x_pos_ref = mm2units(x_pos_ref)
-        x_vel_ref = gradient(x_pos_ref)*Fs
-        z_pos_ref = mm2units(z_pos_ref)
-        z_vel_ref = gradient(z_pos_ref)*Fs
-        alpha_pos_ref = angle2units(alpha_pos_ref)
-        alpha_vel_ref = gradient(alpha_pos_ref)*Fs
-
-        for i in range(len(t) - ti_index):
-            flow_route.append([t[i], f_flow[i + ti_index]])
-            x_route.append([t[i], x_pos_ref[i + ti_index], x_vel_ref[i + ti_index]])
-            z_route.append([t[i], z_pos_ref[i + ti_index], z_vel_ref[i + ti_index]])
-            alpha_route.append([t[i], alpha_pos_ref[i + ti_index], alpha_vel_ref[i + ti_index]])
-            notes.append([t[i], f_notes[i + ti_index]])
-
-        self.musician_pipe.send(["load_routes", x_route, z_route, alpha_route, flow_route, notes])
-        self.musician_pipe.send(["move_to", desired_state, None, False, False, False, False, 50])
-        x = threading.Thread(target=self.wait_musician_is_in_place, args=(desired_state,))
-        x.start()
-
-    def wait_musician_response(self):
-        pass
-    
-    def wait_musician_is_in_place(self, desired_state):
-        if self.connected:
-            while True:
-                if abs(self.data['x'][-1] - desired_state.x) < 0.5 and abs(self.data['z'][-1] - desired_state.z) < 0.5  and abs(self.data['alpha'][-1] - desired_state.alpha) < 1:
-                    print(self.data['x'][-1] - desired_state.x, self.data['z'][-1] - desired_state.z, self.data['alpha'][-1] - desired_state.alpha)
-                    self.playButton.setEnabled(True)
-                    break
-                sleep(0.1)
-        else:
-            self.playButton.setEnabled(True)
-
-    def play(self):
-        self.playing.set()
-        self.clearPlotButton.setEnabled(False)
-        rec = self.recordCheckBox.isChecked()
-        self.musician_pipe.send(["start_loaded_script", rec])
-        coursor = threading.Thread(target=self.move_coursor_and_plot, args=())
-        coursor.start()
-        self.stopButton.setEnabled(True)
-        self.playButton.setEnabled(False)
-        self.recordCheckBox.setEnabled(False)
-        self.horizontalSlider.setEnabled(False)
-    
-    def move_coursor_and_plot(self):
-        t, f_r, p, vib, fil = calculate_route(self.route)
-        ti = int(len(t) * self.horizontalSlider.value() / 99)
-        slider_initial_value = self.horizontalSlider.value()
-        t_0 = time()
+    def clear_plot(self): # borra los gráficos de las mediciones de las distintas variables que fueron ploteadas durante una ejecución de la partitura
+        # primero vaciamos las listas que contienen la informacion de estas curvas
         self.r_plot = np.array([])
         self.theta_plot = np.array([])
         self.offset_plot = np.array([])
         self.flow_plot = np.array([])
         self.freq_plot = np.array([])
         self.t_plot = np.array([])
+        self.clearPlotButton.setEnabled(False) # opcional
+        # y luego actualizamos el gráfico
+        self.refresh_plots_signal.emit(['r'])
+        
+    def go_to_coursor(self): # pre-carga las trayectorias para cada variable de la partitura (iniciando donde se encuentra el cursor) y lleva al robot al estado de la posicion del cursor en la partitura. Usa lineas rectas en el espacio que se esta usando (el de la tarea o el de las junturas)
+        # en estas listas se escribirá la trayectoria
+        flow_route = []
+        x_route = []
+        z_route = []
+        alpha_route = []
+        notes = []
+
+        t, f_flow, p, vib, fil = calculate_route(self.route4) # calculamos la ruta para el flujo, que es independiente al espacio que se esta usando
+        t, f_notes, xp, yp, tx, ty = calculate_notes_route(self.route5) # lo mismo para las notas
+        ti_index = int(len(t) * self.horizontalSlider.value() / 100) # calculamos el tiempo de inicio de acuerdo a la posicion del cursor
+
+        if self.space_of_instruction == 0: # si usamos el espacio de la tarea
+            t, f_r, p, vib, fil = calculate_route(self.route) # con el primer grafico calculamos la ruta para l
+            t, f_theta, p, vib, fil = calculate_route(self.route2) # con el segundp grafico calculamos la ruta para theta
+            t, f_offset, p, vib, fil = calculate_route(self.route3) # con el tercer grafico calculamos la ruta para offset
+            x_pos_ref, z_pos_ref, alpha_pos_ref = change_to_joint_space(f_r, f_theta, f_offset) # calculamos la trayectoria en terminos de x, z y alpha
+            desired_state = State(f_r[ti_index], f_theta[ti_index], f_offset[ti_index], 0) # donde comienza la partitura. Estado al que queremos movernos antes de empezar a tocar
+
+        elif self.space_of_instruction == 1: # si usamos el espacio de las junturas
+            t, x_pos_ref, p, vib, fil = calculate_route(self.route) # con el primer grafico calculamos la ruta para x
+            t, z_pos_ref, p, vib, fil = calculate_route(self.route2) # con el segundp grafico calculamos la ruta para z
+            t, alpha_pos_ref, p, vib, fil = calculate_route(self.route3) # con el tercer grafico calculamos la ruta para alpha
+            desired_state = State(0, 0, 0, 0) # donde comienza la partitura. Estado al que queremos movernos antes de empezar a tocar
+            desired_state.x = x_pos_ref[ti_index]
+            desired_state.z = z_pos_ref[ti_index]
+            desired_state.alpha = alpha_pos_ref[ti_index]
+
+        # ahora lo transformamos a pasos de los motores y calculamos sus gradientes para las velocidades. El gradiente se multiplica por el tiempo total por la normalizacion
+        x_pos_ref = mm2units(x_pos_ref)
+        x_vel_ref = gradient(x_pos_ref)*self.route['total_t']
+        z_pos_ref = mm2units(z_pos_ref)
+        z_vel_ref = gradient(z_pos_ref)*self.route['total_t']
+        alpha_pos_ref = angle2units(alpha_pos_ref)
+        alpha_vel_ref = gradient(alpha_pos_ref)*self.route['total_t']
+
+        # con estas trayectorias podemos rellenar las listas que definimos al principio con el formato que usamos. Aca se rellena desde ti_index
+        for i in range(len(t) - ti_index):
+            flow_route.append([t[i], f_flow[i + ti_index]]) # se desfasa el tiempo en -ti_index
+            x_route.append([t[i], x_pos_ref[i + ti_index], x_vel_ref[i + ti_index]])
+            z_route.append([t[i], z_pos_ref[i + ti_index], z_vel_ref[i + ti_index]])
+            alpha_route.append([t[i], alpha_pos_ref[i + ti_index], alpha_vel_ref[i + ti_index]])
+            notes.append([t[i], f_notes[i + ti_index]])
+
+        self.musician_pipe.send(["load_routes", x_route, z_route, alpha_route, flow_route, notes]) # pre-cargamos las rutas calculadas
+        self.musician_pipe.send(["move_to", desired_state, None, False, False, False, False, 50]) # nos movemos al estado inicial
+        x = threading.Thread(target=self.wait_musician_is_in_place, args=(desired_state,)) # creamos un thread que revisa cuando el robot llega al estado inicial. Una vez que llega a posición es posible pedirle que empiece a tocar la partitura
+        x.start()
+    
+    def wait_musician_is_in_place(self, desired_state): # se corre como thread, espera a que el robot se encuentre en desired_state para activar el boton de play
+        if self.connected:
+            while True:
+                if abs(self.data['x'][-1] - desired_state.x) < 0.5 and abs(self.data['z'][-1] - desired_state.z) < 0.5  and abs(self.data['alpha'][-1] - desired_state.alpha) < 1: # esperamos que el robot se acerque a la posición deseada con una holgura de 0.5mm en x, 0.5mm en z y 1° en alpha
+                    self.playButton.setEnabled(True)
+                    break # se sale del loop, terminando el thread
+                sleep(0.1)
+        else: # si el robot no esta conectado inmediatamente se activa el boton de play
+            self.playButton.setEnabled(True)
+
+    def play(self): # funcion que se ejecuta al presionar el boton de play. Comienza la ejecucion de la partitura pre-cargada
+        self.playing.set() 
+        self.clearPlotButton.setEnabled(False)
+        rec = self.recordCheckBox.isChecked() # si se selecciono la opcion de grabar
+        self.musician_pipe.send(["start_loaded_script", rec]) # ordena al musico a empezar a tocar las rutas pre-cargadas
+        coursor = threading.Thread(target=self.move_coursor_and_plot, args=()) # crea un thread que se encarga del movimiento del cursor a lo largo de la partitura y de plotear el valor medido en cada eje
+        coursor.start()
+        self.stopButton.setEnabled(True)
+        self.playButton.setEnabled(False)
+        self.recordCheckBox.setEnabled(False)
+        self.horizontalSlider.setEnabled(False)
+    
+    def move_coursor_and_plot(self): # funcion que actualiza la posicion del cursor y plotea los valores medidos de cada variable
+        t, f_r, p, vib, fil = calculate_route(self.route)
+        slider_initial_value = self.horizontalSlider.value()
+        ti = int(len(t) * slider_initial_value / 99) # indice inicial para el tiempo
+        t_0 = time() # tiempo de inicio
+        self.clear_plot() # limpiamos las listas donde se plotean los valores medidos
         last_t = self.data["times"][-1]
         first_t = self.data["times"][-1]
         while True:
@@ -777,6 +781,7 @@ class Window(QMainWindow, PlotWindow):
         '''
         Esta función se ejecuta al cerrar el programa, para terminar todos los procesos que están corriendo
         '''
+        self.process_running.clear()
         self.playing.clear()
         self.running.clear()
         sleep(0.5)
