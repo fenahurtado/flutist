@@ -619,24 +619,10 @@ class FuncTableForm(QDialog, FuncTableDialog):
                         else:
                             params = [data[6], data[7], data[8], data[9]]
                         filter_choice = filter_choices[choice]
-                        try:
+                        if self.parent.check_filter(time_i, time_f, filter_choice, params):
                             self.parent.add_item(self.data[0], self.data[1], [time_i, time_f, filter_choice, params])
                             self.poblate()
                             break
-                        except:
-                            if self.data[0] == 0:
-                                self.parent.route['filters'].remove([time_i, time_f, filter_choice, params])
-                                self.parent.route['history'].remove(['filter', [time_i, time_f, filter_choice, params]])
-                            elif self.data[0] == 1:
-                                self.parent.route2['filters'].remove([time_i, time_f, filter_choice, params])
-                                self.parent.route2['history'].remove(['filter', [time_i, time_f, filter_choice, params]])
-                            elif self.data[0] == 2:
-                                self.parent.route3['filters'].remove([time_i, time_f, filter_choice, params])
-                                self.parent.route3['history'].remove(['filter', [time_i, time_f, filter_choice, params]])
-                            elif self.data[0] == 3:
-                                self.parent.route4['filters'].remove([time_i, time_f, filter_choice, params])
-                                self.parent.route4['history'].remove(['filter', [time_i, time_f, filter_choice, params]])
-                            
                     else:
                         break
         else:
@@ -715,23 +701,10 @@ class FuncTableForm(QDialog, FuncTableDialog):
                             else:
                                 params = [data[6], data[7], data[8], data[9]]
                             filter_choice = filter_choices[choice]
-                            try:
+                            if self.parent.check_filter(time_i, time_f, filter_choice, params):
                                 self.parent.edit_item(self.data[0], self.data[1], self.item_selected, [time_i, time_f, filter_choice, params])
                                 self.poblate()
                                 break
-                            except:
-                                if self.data[0] == 0:
-                                    self.parent.route['filters'][self.item_selected] = new_data
-                                    self.parent.route['filters'].sort(key=lambda x: x[0])
-                                elif self.data[0] == 1:
-                                    self.parent.route2['filters'][self.item_selected] = new_data
-                                    self.parent.route2['filters'].sort(key=lambda x: x[0])
-                                elif self.data[0] == 2:
-                                    self.parent.route3['filters'][self.item_selected] = new_data
-                                    self.parent.route3['filters'].sort(key=lambda x: x[0])
-                                elif self.data[0] == 3:
-                                    self.parent.route4['filters'][self.item_selected] = new_data
-                                    self.parent.route4['filters'].sort(key=lambda x: x[0])
                         else:
                             break
             else:
