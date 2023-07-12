@@ -105,10 +105,10 @@ class State:
     def flute_coords(self):
         return self.r, self.theta, self.o
 
-    def homed(self):
-        self.x = 0
-        self.z = 0
-        self.alpha = 0
+    # def homed(self):
+    #     self.x = 0
+    #     self.z = 0
+    #     self.alpha = 0
     
     def change_state(self, other):
         self.r = other.r
@@ -118,10 +118,10 @@ class State:
         self.vibrato_amp = other.vibrato_amp
         self.vibrato_freq = other.vibrato_freq
 
-    def is_too_close(self, other, thr_x=0.3, thr_z=0.3, thr_alpha=0.5):
-        if abs(other.x - self.x) < thr_x and abs(other.z - self.z) < thr_z and abs(other.x - self.x) < thr_alpha:
-            return True
-        return False
+    # def is_too_close(self, other, thr_x=0.3, thr_z=0.3, thr_alpha=0.5):
+    #     if abs(other.x - self.x) < thr_x and abs(other.z - self.z) < thr_z and abs(other.x - self.x) < thr_alpha:
+    #         return True
+    #     return False
 
 
 def read_variables():
