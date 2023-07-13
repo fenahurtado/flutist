@@ -430,23 +430,28 @@ class Memory(Process):
         self.flow_controller = flow_controller
         self.pressure_sensor = pressure_sensor
         self.microphone = microphone
-        self.pipe_end = pipe_end
+        self.pipe_end = pipe_end # pipe que conecta con el musico
         self.windowWidth = windowWidth
+
+        # creamos dos estados, el real y el de referencia
         self.ref_state = State(0,0,0,0)
         self.real_state = State(0,0,0,0)
 
+        # el estado referencia sigue los ejes virtuales
         self.ref_state.x = x_units_to_mm(self.x_driver.pos_ref.value)
         self.ref_state.z = z_units_to_mm(self.z_driver.pos_ref.value)
         self.ref_state.alpha = alpha_units_to_angle(self.alpha_driver.pos_ref.value)
         self.ref_state.flow = self.flow_controller.mass_flow_set_point_reading.value
+        # el estado real refleja lo medido en los encoders
         self.real_state.x = x_units_to_mm(self.x_driver.encoder_position.value)
         self.real_state.z = z_units_to_mm(self.z_driver.encoder_position.value)
         self.real_state.alpha = alpha_units_to_angle(self.alpha_driver.encoder_position.value)
         self.real_state.flow = self.flow_controller.mass_flow_reading.value
 
-        self.data = data
-        self.data['flow_ref'] = linspace(0,0,200)
-        self.data['x_ref'] = linspace(0,0,200)
+        self.data = data # data compartida entre los procesos. 
+        # Esta clase se encarga de actualizar las siguientes listas en data:
+        self.data['flow_ref'] = linspace(0,0,200) # donde almacenamos los ultimos 200 valores (midiendo cada 0.01s)
+        self.data['x_ref'] = linspace(0,0,200) # un arreglo de 200 ceros
         self.data['z_ref'] = linspace(0,0,200)
         self.data['alpha_ref'] = linspace(0,0,200)
         self.data['x'] = linspace(0,0,200)
@@ -469,15 +474,16 @@ class Memory(Process):
         self.first_entry = False
         self.t1 = 0
 
+        # tambien creamos un data frame para cuando queramos grabar. Este tiene las columnas de todas las variables medidas
         self.data_frame = pd.DataFrame(columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'offset_ref', 'theta_ref', 'radius_ref', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref'])
 
         self.interval = interval
         self.running = running
 
     def run(self):
-        self.pipe_end.send(["memory_started"])
+        self.pipe_end.send(["memory_started"]) # se avisa al musico que la memoria ya esta operativa
         while self.running.is_set():
-            
+            # en cada iteracion actualizamos los valores del estado referencia y el estado real leyendo los encoders y los ejes virtuales
             self.ref_state.x = x_units_to_mm(self.x_driver.pos_ref.value)
             self.ref_state.z = z_units_to_mm(self.z_driver.pos_ref.value)
             self.ref_state.alpha = alpha_units_to_angle(self.alpha_driver.pos_ref.value)
@@ -487,7 +493,7 @@ class Memory(Process):
             self.real_state.alpha = alpha_units_to_angle(self.alpha_driver.encoder_position.value)
             self.real_state.flow = self.flow_controller.mass_flow_reading.value
 
-            
+            # luego actualizamos los arreglos, haciendo un shift a la izquierda y agregando el valor recien leido
             self.data['x_ref'] = np.hstack([self.data['x_ref'][1:], self.ref_state.x])
             self.data['z_ref'] = np.hstack([self.data['z_ref'][1:], self.ref_state.z])
             self.data['alpha_ref'] = np.hstack([self.data['alpha_ref'][1:], self.ref_state.alpha])
@@ -508,43 +514,41 @@ class Memory(Process):
             self.data['temperature'] = np.hstack([self.data['temperature'][1:], self.flow_controller.temperature_reading.value])
             self.data['frequency'] = np.hstack([self.data['frequency'][1:], self.microphone.pitch.value])
             self.data['times'] = np.hstack([self.data['times'][1:], time.time() - self.t0])  
-            if self.saving:
-                if self.first_entry:
+            if self.saving: # si esta condicion esta activa agregaremos el estado actual al dataframe como una entrada
+                if self.first_entry: # si es la primera entrada del data frame, tomamos el tiempo actual y lo usamos como tiempo inicial para desfasar todas las entradas, y asi partir en cero
                     self.t1 = self.data['times'][-1]
                     self.first_entry = False
-                new_data = pd.DataFrame([[self.data['times'][-1] - self.t1, self.data['frequency'][-1], self.data["temperature"][-1], self.data["mass_flow"][-1], self.data["volume_flow"][-1], self.data["mouth_pressure"][-1], self.data["offset"][-1], self.data["theta"][-1], self.data["radius"][-1], self.data["offset_ref"][-1], self.data["theta_ref"][-1], self.data["radius_ref"][-1], self.data["alpha"][-1], self.data["z"][-1], self.data["x"][-1], self.data["alpha_ref"][-1], self.data["z_ref"][-1], self.data["x_ref"][-1], self.data["flow_ref"][-1]]], columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'offset_ref', 'theta_ref', 'radius_ref', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref'])
-                self.data_frame = pd.concat([self.data_frame, new_data], ignore_index=True)
+                new_data = pd.DataFrame([[self.data['times'][-1] - self.t1, self.data['frequency'][-1], self.data["temperature"][-1], self.data["mass_flow"][-1], self.data["volume_flow"][-1], self.data["mouth_pressure"][-1], self.data["offset"][-1], self.data["theta"][-1], self.data["radius"][-1], self.data["offset_ref"][-1], self.data["theta_ref"][-1], self.data["radius_ref"][-1], self.data["alpha"][-1], self.data["z"][-1], self.data["x"][-1], self.data["alpha_ref"][-1], self.data["z_ref"][-1], self.data["x_ref"][-1], self.data["flow_ref"][-1]]], columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'offset_ref', 'theta_ref', 'radius_ref', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref']) # creamos la nueva entrada
+                self.data_frame = pd.concat([self.data_frame, new_data], ignore_index=True) # y la concatenamos con lo que teniamos
             
-            if self.pipe_end.poll(self.interval):
+            if self.pipe_end.poll(self.interval): # luego escuchamos si hay instrucciones del musico. Acá esperamos 0.01s
                 message = self.pipe_end.recv()
                 print("Message received in memory:", message[0])
-                if message[0] == "get_data":
-                    self.pipe_end.send([self.data])
-                if message[0] == "start_saving":
+                if message[0] == "start_saving": # si se quiere empezar a grabar
                     self.start_saving()
-                if message[0] == "stop_recording":
+                if message[0] == "stop_recording": # si se quiere dejar de grabar
                     self.stop_recording()
-                if message[0] == "save_recorded_data":
+                if message[0] == "save_recorded_data": # si se quiere guardar en un archivo el dataframe grabado. message[1] tiene la direccion donde se quiere guardar
                     self.save_recorded_data(message[1])
                     print("Data saved to file", message[1])
     
-    def start_saving(self):
-        self.first_entry = True
-        self.data_frame = pd.DataFrame(columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref'])
-        self.saving = True
+    def start_saving(self): # funcion para empezar a grabar datos leidos. Si habían datos grabados de antes, se formatean para empezar denuevo
+        self.first_entry = True # se activa esta condicion para tomar el proximo tiempo como el primero
+        self.data_frame = pd.DataFrame(columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref']) # creamos un nuevo data_frame vacio
+        self.saving = True # activamos esta condicion
     
-    def pause_saving(self):
+    def pause_saving(self): # para pausar la grabacion de datos (mismo efecto que stop)
         self.saving = False
 
-    def resume_saving(self):
+    def resume_saving(self): # para reanudar una grabacion sin borrar los datos que se tenian antes
         self.saving = True
     
-    def finish_saving(self, file_name):
+    def finish_saving(self, file_name): # para dejar de grabar, y al mismo tiempo guardar la informacion grabada en un archivo
         self.saving = False
         self.data_frame.to_csv(file_name)
 
-    def save_recorded_data(self, filename1):
+    def save_recorded_data(self, filename1): # redundante. solo llama a finish_saving
         self.finish_saving(filename1)
 
-    def stop_recording(self):
+    def stop_recording(self): # para pausar la grabacion de datos (mismo efecto que pause)
         self.saving = False
