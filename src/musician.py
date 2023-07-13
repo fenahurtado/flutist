@@ -208,9 +208,9 @@ class Musician(Process):
                     if message[1]:
                         self.memory_conn.send(["stop_recording"])
                         self.mic_conn.send(["stop_recording"])
-                elif  message[0] == "execute_score":
-                    self.execute_score(message[1])
-                    print("executed")
+                # elif  message[0] == "execute_score":
+                    # self.execute_score(message[1])
+                    # print("executed")
                 elif message[0] == "stop":
                     self.stop()
                     self.memory_conn.send(["stop_recording"])
@@ -388,34 +388,34 @@ class Musician(Process):
 
         return route['t'][-1]
 
-    def execute_score(self, path, go_back=True):
-        my_state = State(0, 0, 0, 0)
-        my_state.x = x_units_to_mm(self.x_driver.encoder_position.value)
-        my_state.z = z_units_to_mm(self.z_driver.encoder_position.value)
-        my_state.alpha = alpha_units_to_angle(self.alpha_driver.encoder_position.value)
-        my_state.flow = self.flow_driver.mass_flow_reading.value
+    # def execute_score(self, path, go_back=True):
+    #     my_state = State(0, 0, 0, 0)
+    #     my_state.x = x_units_to_mm(self.x_driver.encoder_position.value)
+    #     my_state.z = z_units_to_mm(self.z_driver.encoder_position.value)
+    #     my_state.alpha = alpha_units_to_angle(self.alpha_driver.encoder_position.value)
+    #     my_state.flow = self.flow_driver.mass_flow_reading.value
 
-        route = get_route_complete(path, go_back=go_back)
-        initial_state = State(0, 0, 0, 0)
-        initial_state.x = x_units_to_mm(route['x'][0])
-        initial_state.z = z_units_to_mm(route['z'][0])
-        initial_state.alpha = alpha_units_to_angle(route['alpha'][0])
-        # print(initial_state)
-        self.move_to(initial_state)
+    #     route = get_route_complete(path, go_back=go_back)
+    #     initial_state = State(0, 0, 0, 0)
+    #     initial_state.x = x_units_to_mm(route['x'][0])
+    #     initial_state.z = z_units_to_mm(route['z'][0])
+    #     initial_state.alpha = alpha_units_to_angle(route['alpha'][0])
+    #     # print(initial_state)
+    #     self.move_to(initial_state)
 
-        self.loaded_route_x = []
-        self.loaded_route_z = []
-        self.loaded_route_alpha = []
-        self.loaded_route_flow = []
-        self.loaded_route_notes = route['notes']
-        # self.virtual_fingers.note_time = 0
-        # self.virtual_fingers.next_note_time = 0
-        #print(self.loaded_route_notes)
-        for i in range(len(route['t'])):
-            self.loaded_route_x.append([route['t'][i], route['x'][i], route['x_vel'][i]])
-            self.loaded_route_z.append([route['t'][i], route['z'][i], route['z_vel'][i]])
-            self.loaded_route_alpha.append([route['t'][i], route['alpha'][i], route['alpha_vel'][i]])
-            self.loaded_route_flow.append([route['t_flow'][i], route['flow'][i]])
+    #     self.loaded_route_x = []
+    #     self.loaded_route_z = []
+    #     self.loaded_route_alpha = []
+    #     self.loaded_route_flow = []
+    #     self.loaded_route_notes = route['notes']
+    #     # self.virtual_fingers.note_time = 0
+    #     # self.virtual_fingers.next_note_time = 0
+    #     #print(self.loaded_route_notes)
+    #     for i in range(len(route['t'])):
+    #         self.loaded_route_x.append([route['t'][i], route['x'][i], route['x_vel'][i]])
+    #         self.loaded_route_z.append([route['t'][i], route['z'][i], route['z_vel'][i]])
+    #         self.loaded_route_alpha.append([route['t'][i], route['alpha'][i], route['alpha_vel'][i]])
+    #         self.loaded_route_flow.append([route['t_flow'][i], route['flow'][i]])
 
         # print("flujo:", self.loaded_route_flow)
         # print("x:", self.loaded_route_x)
