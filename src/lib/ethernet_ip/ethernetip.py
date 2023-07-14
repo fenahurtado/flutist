@@ -19,6 +19,19 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+"""
+Modificaciones:
+
+1. Se modifico el objeto EtherNetIP para que soportara multiples conexiones a dispositivos.
+Para esto se cambio la propiedad EtherNetIP.assembly, un diccionario que almacena las instancias para conectarse al dispositivo. A este se le agrego una etapa de indexación, donde se le pide la direccion IP del dispositivo al que quiere conectar. 
+Lineas 413. 419. 456-470. 477
+
+2. Se modificaron los parametros que recibe el metodo EtherNetIPExpConnection.sendFwdCloseReq(), eliminando fwdc. 
+Lineas 886-900
+
+3. Se modifico el seq_count que se envia con los mensajes a los dispositivos, para que luego de pasar 6552 mensajes vuelva a 0 y no produzca error por overflow. 
+Linea 947
+"""
 
 import random
 import select

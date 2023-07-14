@@ -23,6 +23,9 @@ from src.route import dict_notes
 from sounddevice import query_hostapis, query_devices
 
 class SettingsForm(QDialog, SettingsFormDialog):
+    """
+    Formulario para configurar los ajustes del robot. Se accede a este formulario desde la ventana principal > File > Settings
+    """
     def __init__(self, parent=None, data=[0 for i in range(34)]):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
@@ -31,7 +34,7 @@ class SettingsForm(QDialog, SettingsFormDialog):
         self.setAllValues()
         self.connectAllSignals()
 
-    def get_available_mics(self):
+    def get_available_mics(self): # revisa los microfonos disponibles por sistema y retorna una lista de strings que los representa
         devices = query_devices()
         hostapis = query_hostapis()
         l = []
@@ -44,7 +47,7 @@ class SettingsForm(QDialog, SettingsFormDialog):
             l.append(f'{i} {n}, {h} ({inp} in, {out} out)')
         return l
 
-    def setAllValues(self):
+    def setAllValues(self): # lee los ajustes guardados en DATA y pre-rellena el formulario con sus valores actuales
         global DATA
         self.xFlutePos.setValue(DATA["flute_position"]["X_F"])
         self.zFlutePos.setValue(DATA["flute_position"]["Z_F"])
@@ -79,7 +82,7 @@ class SettingsForm(QDialog, SettingsFormDialog):
         self.pYINfill_na.setCurrentIndex(DATA["frequency_detection"]["pYIN"]["fill_na"])
         self.pYINfill_na_float.setValue(DATA["frequency_detection"]["pYIN"]["fill_na_float"])
         self.pYINpad_mode.setCurrentIndex(DATA["frequency_detection"]["pYIN"]["pad_mode"])
-        if DATA["frequency_detection"]["method"] == 0:
+        if DATA["frequency_detection"]["method"] == 0: # solo se muestran las configuraciones para el metodo de pitch seleccionado
             self.pYINGroupBox.hide()
         else:
             self.YINGroupBox.hide()
@@ -124,7 +127,7 @@ class SettingsForm(QDialog, SettingsFormDialog):
         self.A_ki_vel_value.setValue(DATA["alpha_control"]["ki_vel"])
         self.A_kd_vel_value.setValue(DATA["alpha_control"]["kd_vel"])
         
-    def connectAllSignals(self):
+    def connectAllSignals(self): # conecta los cambios de cualquier campo con una funcion que actualiza DATA
         self.xFlutePos.valueChanged.connect(partial(self.update_data, ["flute_position", "X_F"]))
         self.zFlutePos.valueChanged.connect(partial(self.update_data, ["flute_position", "Z_F"]))
 
@@ -192,20 +195,21 @@ class SettingsForm(QDialog, SettingsFormDialog):
         self.A_ki_vel_value.valueChanged.connect(partial(self.update_data, ["alpha_control", "ki_vel"]))
         self.A_kd_vel_value.valueChanged.connect(partial(self.update_data, ["alpha_control", "kd_vel"]))
 
-        self.buttonBox.clicked.connect(self.button_clicked)
+        # tambien conectamos los botones del grupo de botones y el de store settings
+        self.buttonBox.clicked.connect(self.button_clicked) 
         self.storeSettings.clicked.connect(self.store_settings)
 
-    def update_data(self, index, value):
+    def update_data(self, index, value): # actualiza el cambios en algun campo, que se indica con la llave index. El valor nuevo esta en value
         global DATA
-        if index == ["frequency_detection", "method"]:
-            if value:
+        if index == ["frequency_detection", "method"]: # si se cambia el metodo de deteccion de pitch hay que actualizar el formulario
+            if value: # se elige pYIN
                 self.YINGroupBox.hide()
                 self.pYINGroupBox.show()
-            else:
+            else: # se elige YIN
                 self.pYINGroupBox.hide()
                 self.YINGroupBox.show()
 
-        #print(index)
+        # index es una lista que puede tener largos 1, 2 o 3
         if len(index) == 1:
             DATA[index[0]] = value
             print(DATA[index[0]])
@@ -216,27 +220,36 @@ class SettingsForm(QDialog, SettingsFormDialog):
             DATA[index[0]][index[1]][index[2]] = value
             print(DATA[index[0]][index[1]][index[2]])
     
-    def button_clicked(self, button):
+    def button_clicked(self, button): # aplica los cambios al apretar botones del grupo de botones
+        # el grupo de botones tiene 4 botones:
+        # OK: aplica los cambios y cierra el formulario
+        # Cancel: cierra el formulario sin aplicar los cambios
+        # Apply: aplica los cambios pero no cierra el formulario
+        # Restore default: vuelve a las configuraciones guardadas
         global DATA
         if button.text() == 'Apply':
             self.parent.refresh_settings()
         elif button.text() == 'Restore Defaults':
-            DATA = read_variables()
+            DATA = read_variables() # volvemos a leer el archivo settings.json
             self.setAllValues()
 
-    def store_settings(self):
+    def store_settings(self): # guarda las configuraciones actuales en settings.json
         global DATA, DATA_dir
-        #dir = os.path.dirname(os.path.realpath(__file__)) + '\settings.json'
         with open(DATA_dir, 'w') as json_file:
             json.dump(DATA, json_file, indent=4, sort_keys=True)
 
 class PointForm(QDialog, PointFormDialog):
+    """
+    Formulario para crear o editar un punto que se añadirá a una de las curvas para la trayectoria.
+    Debe ajustarse tiempo y valor
+    """
     def __init__(self, parent=None, data=[0,0], max_t=100, min_v=0, max_v=100):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
         self.parent = parent
         self.data = data
 
+        # ponemos valores iniciales y fijamos limites
         self.time.setValue(data[0])
         self.time.setMaximum(max_t)
         
@@ -244,33 +257,39 @@ class PointForm(QDialog, PointFormDialog):
         self.value.setMinimum(min_v)
         self.value.setValue(data[1])
 
+        # conectamos los cambios en los campos con update_data
         self.time.valueChanged.connect(partial(self.update_data, 'time'))
         self.value.valueChanged.connect(partial(self.update_data, 'value'))
 
     def update_data(self, tag, value):
+        # actualiza self.data con los valores ingresados por el usuario
         if tag == 'time':
             self.data[0] = value
         elif tag == 'value':
             self.data[1] = value
 
 class TrillForm(QDialog, TrillFormDialog):
+    """
+    Formulario para crear o editar un elemento trill que se añadirá a la curvas de las notas.
+    Debe ajustarse tiempo de inicio, duracion, distancia y frecuencia
+    """
     def __init__(self, parent=None, data=[0,0,0,0], max_t=100):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
         self.parent = parent
         self.data = data
 
+        # ponemos valores iniciales y fijamos limites
         self.time.setValue(data[0])
         self.time.setMaximum(max_t)
 
-        # self.noteComboBox.addItems(list(dict_notes.values()))
-        # self.noteComboBox.setCurrentIndex(data[1])
         self.distance.setValue(int(data[1]))
         self.duration.setMaximum(max_t-data[0])
         
         self.frequency.setValue(data[2])
         self.duration.setValue(data[3])
         
+        # conectamos los cambios en los campos con update_data
         self.time.valueChanged.connect(partial(self.update_data, 'time'))
         self.distance.valueChanged.connect(partial(self.update_data, 'distance'))
         self.frequency.valueChanged.connect(partial(self.update_data, 'frequency'))
@@ -287,26 +306,38 @@ class TrillForm(QDialog, TrillFormDialog):
             self.data[3] = value
 
 class ScaleTimeForm(QDialog, ScaleTimeFormDialog):
+    """
+    Formulario para escalar el tiempo de una trayectoria.
+    Debe ajustarse el factor por el que se quiere escalar
+    """
     def __init__(self, parent=None, data=[0]):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
         self.parent = parent
         self.data = data
 
+        # fijamos un valor inicial
         self.scaleFactor.setValue(data[0])
+        # y conectamos el cambio
         self.scaleFactor.valueChanged.connect(self.update_data)
 
     def update_data(self, value):
+        # actualiza self.data con los valores ingresados por el usuario
         self.data[0] = value
 
 class CorrectionForm(QDialog, CorrectionFormDialog):
+    """
+    Formulario para añadir correcciones en los ejes del tiempo y valor para cualquiera de las curvas de la trayectoria
+    Debe ajustarse los delta t y los delta y en cada una de las 5 curvas
+    """
     def __init__(self, parent=None, data=[0,0,0,0,0,0,0,0,0,0], space=0):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
         self.parent = parent
         self.data = data
-        self.space = space
-
+        self.space = space # espacio de la tarea o de las junturas. Cambian los labels
+        
+        # ponemos valores iniciales
         self.r_dis.setValue(data[0])
         self.theta_dis.setValue(data[1])
         self.offset_dis.setValue(data[2])
@@ -319,7 +350,7 @@ class CorrectionForm(QDialog, CorrectionFormDialog):
         self.leadDelayFlow.setValue(data[8])
         self.leadDelayNotes.setValue(data[9])
 
-        if self.space == 1:
+        if self.space == 1: # espacio de las junturas
             self.label.setText("X (mm)")
             self.label_2.setText("Z (mm)")
             self.label_3.setText("Alpha (°)")
@@ -327,6 +358,7 @@ class CorrectionForm(QDialog, CorrectionFormDialog):
             self.label_7.setText("Lead or delay Z (s)")
             self.label_8.setText("Lead or delay Alpha (s)")
 
+        # conectamos los cambios en los campos con update_data
         self.r_dis.valueChanged.connect(partial(self.update_data, 'r'))
         self.theta_dis.valueChanged.connect(partial(self.update_data, 'theta'))
         self.offset_dis.valueChanged.connect(partial(self.update_data, 'offset'))
@@ -340,6 +372,7 @@ class CorrectionForm(QDialog, CorrectionFormDialog):
         self.leadDelayNotes.valueChanged.connect(partial(self.update_data, 'leadDelayNotes'))
 
     def update_data(self, tag, value):
+        # actualiza self.data con los valores ingresados por el usuario
         if tag == 'r':
             self.data[0] = value
         elif tag == 'theta':
@@ -362,34 +395,47 @@ class CorrectionForm(QDialog, CorrectionFormDialog):
             self.data[9] = value
 
 class DurationForm(QDialog, DurationFormDialog):
+    """
+    Formulario para cambiar la duracion total de la trayectoria
+    Debe ajustarse el nuevo tiempo total
+    """
     def __init__(self, parent=None, data=[0]):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
         self.parent = parent
         self.data = data
 
+        # ponemos valor inicial y conectamos con la funcion que actualiza self.data
         self.time.setValue(data[0])
         self.time.valueChanged.connect(self.change_time)
 
     def change_time(self, value):
+        # actualiza self.data con los valores ingresados por el usuario
         self.data[0] = value
 
 class NoteForm(QDialog, NotesFormDialog):
+    """
+    Formulario para crear o editar una nota que se añadirá a la curvas de las notas para la trayectoria.
+    Debe ajustarse tiempo y valor
+    """
     def __init__(self, parent=None, data=[0,0], max_t=100):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
         self.parent = parent
         self.data = data
 
+        # ponemos valores iniciales y fijamos limites
         self.time.setValue(data[0])
         self.time.setMaximum(max_t)
         self.note_choice.addItems(list(dict_notes.values()))
         self.note_choice.setCurrentIndex(data[1])
 
+        # conectamos los cambios en los campos con update_data
         self.time.valueChanged.connect(partial(self.update_data, 'time'))
         self.note_choice.currentIndexChanged.connect(partial(self.update_data, 'value'))
 
     def update_data(self, tag, value):
+        # actualiza self.data con los valores ingresados por el usuario
         if tag == 'time':
             self.data[0] = value
         elif tag == 'value':
@@ -397,6 +443,10 @@ class NoteForm(QDialog, NotesFormDialog):
 
 windows_vibrato = ['rect', 'triangular', 'blackman', 'hamming', 'hanning', 'kaiser1', 'kaiser2', 'kaiser3', 'kaiser4', 'ramp']
 class VibratoForm(QDialog, VibratoFormDialog):
+    """
+    Formulario para crear o editar un elemento de vibrato que se añadirá a una de las curvas para la trayectoria.
+    Debe ajustarse tiempo de inicio, duracion, aplitud, frecuencia y ventana por la que se multiplicará
+    """
     def __init__(self, parent=None, data=[0,0,0,0,0], max_t=100):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
@@ -404,6 +454,7 @@ class VibratoForm(QDialog, VibratoFormDialog):
         self.data = data
         self.max_t = max_t
 
+        # ponemos valores iniciales y fijamos limites
         self.time_i.setValue(data[0])
         self.duration.setValue(data[1])
         self.duration.setMaximum(max_t - data[0])
@@ -411,6 +462,7 @@ class VibratoForm(QDialog, VibratoFormDialog):
         self.freq.setValue(data[3])
         self.window_v.setCurrentIndex(data[4])
 
+        # conectamos los cambios en los campos con update_data
         self.time_i.valueChanged.connect(partial(self.update_data, 'time_i'))
         self.duration.valueChanged.connect(partial(self.update_data, 'duration'))
         self.amp.valueChanged.connect(partial(self.update_data, 'amp'))
@@ -418,9 +470,10 @@ class VibratoForm(QDialog, VibratoFormDialog):
         self.window_v.currentIndexChanged.connect(partial(self.update_data, 'window_v'))
 
     def update_data(self, tag, *args):
+        # actualiza self.data con los valores ingresados por el usuario
         if tag == 'time_i':
             self.data[0] = args[0]
-            self.duration.setMaximum(self.max_t - self.data[0])
+            self.duration.setMaximum(self.max_t - self.data[0]) # al cambiar el tiempo de inicio cambia la duracion posible
         elif tag == 'duration':
             self.data[1] = args[0]
         elif tag == 'amp':
@@ -430,15 +483,21 @@ class VibratoForm(QDialog, VibratoFormDialog):
         elif tag == 'window_v':
             self.data[4] = args[0]
 
+# estas listas son las mismas que tiene el formulario, son necesarias para traducir los valores seleccionados
 filter_choices = ['firwin', 'remez', 'butter', 'chebyshev', 'elliptic']
 filter_windows = ['hamming', 'hann', 'blackman', 'bartlett', 'rect']
 class FilterForm(QDialog, FilterFormDialog):
+    """
+    Formulario para crear o editar un elemento de filtro que se añadirá a una de las curvas para la trayectoria.
+    Debe ajustarse tiempo de inicio, tiempo de fin, tipo de filtro y sus parámetros (que varian de acuerdo al filtro)
+    """
     def __init__(self, parent=None, data=[0 for i in range(16)]):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
         self.parent = parent
         self.data = data
 
+        # fijamos los valores iniciales
         self.time_i.setValue(data[0])
         self.time_f.setValue(data[1])
         self.filter_choice.setCurrentIndex(data[2])
@@ -459,9 +518,10 @@ class FilterForm(QDialog, FilterFormDialog):
         self.chebfs.setValue(data[14])
         self.chebrp.setValue(data[15])
 
+        # conectamos los cambios en los campos con update_data
         self.time_i.valueChanged.connect(partial(self.update_data, 'time_i'))
         self.time_f.valueChanged.connect(partial(self.update_data, 'time_f'))
-        self.filter_choice.currentIndexChanged.connect(self.update_form)
+        self.filter_choice.currentIndexChanged.connect(self.update_form) # en el caso de filter_choice lo conectamos a update_form
 
         self.window_choice.currentIndexChanged.connect(partial(self.update_data, 'window_choice'))
         self.window_n.valueChanged.connect(partial(self.update_data, 'window_n'))
@@ -479,43 +539,45 @@ class FilterForm(QDialog, FilterFormDialog):
         self.chebfs.valueChanged.connect(partial(self.update_data, 'chebfs'))
         self.chebrp.valueChanged.connect(partial(self.update_data, 'chebrp'))
 
-        if self.data[2] == 0:
+        if self.data[2] == 0: # firwin tiene un set de parametros distinto al resto
             #self.windowGroup.hide()
             self.OtherGroup.hide()
             self.ChebGroup.hide()
-        elif self.data[2] == 3:
+        elif self.data[2] == 3: # chebyshev tambien tiene un set de parametros distinto
             self.windowGroup.hide()
             self.OtherGroup.hide()
             #self.ChebGroup.hide()
-        else:
+        else: # remez, butter o elliptic tienen los mismos parametros
             self.windowGroup.hide()
             #self.OtherGroup.hide()
             self.ChebGroup.hide()
-        self.resize(400,100)
+        self.resize(400,100) # para ajustarse por los distintos tamaños
         self.min_size = self.size()
 
     def update_form(self, new_index):
-        if new_index == 0:
+        # toma los cambios en el tipo de filtro seleccionado y actualiza el display del formulario de acuerdo a los parametros necesarios
+        if new_index == 0: # firwin
             self.windowGroup.show()
             self.OtherGroup.hide()
             self.ChebGroup.hide()
-            self.adjustSize()
+            self.adjustSize() # por los diferentes tamaños de los grupos es necesario ajustar el tamaño
             self.resize(self.min_size)
-        elif new_index == 3:
+        elif new_index == 3: # chebyshev
             self.windowGroup.hide()
             self.OtherGroup.hide()
             self.ChebGroup.show()
-            self.adjustSize()
+            self.adjustSize() # por los diferentes tamaños de los grupos es necesario ajustar el tamaño
             self.resize(self.min_size)
-        else:
+        else: # remez, butter o elliptic
             self.windowGroup.hide()
             self.OtherGroup.show()
             self.ChebGroup.hide()
-            self.adjustSize()
+            self.adjustSize() # por los diferentes tamaños de los grupos es necesario ajustar el tamaño
             self.resize(self.min_size)
-        self.data[2] = new_index
+        self.data[2] = new_index # finalmente tambien actualizamos self.data
 
     def update_data(self, tag, *args):
+        # actualiza self.data con los valores ingresados por el usuario
         if tag == 'time_i':
             self.data[0] = args[0]
         elif tag == 'time_f':
@@ -549,6 +611,13 @@ class FilterForm(QDialog, FilterFormDialog):
 
 
 class FuncTableForm(QDialog, FuncTableDialog):
+    """
+    Este formulario es diferente al resto. Quizas más que un formulario es una ventana. 
+    Muestra todas las caracteristicas de la trayectoria en tablas.
+    Es posible cambiar de funciones (o curvas) con un menu, para ver las propiedades de la curva de l, theta, offset, flow o notas.
+    Tambien es posible ver todos los puntos que definen cada una de estas curvas en una tabla, asi como los vibratos que tiene y los elementos de filtro que se le agregaron. Se cambia de elemento a mostrar en la tabla con otro menu.
+    Desde esta ventana es posible agregar, editar o eliminar cualquier elemento a cualquiera de las curvas.
+    """
     def __init__(self, parent=None, data=[]):
         super().__init__(parent) #super(Form, self).__init__(parent)
         self.setupUi(self)
@@ -559,23 +628,32 @@ class FuncTableForm(QDialog, FuncTableDialog):
         self.last_note = 0
 
         self.function_choice.setCurrentIndex(data[0])
-        if data[0] == 4:
-            self.property_choice.clear()
+        if data[0] == 4: # si se elige la quinta curva, la de las notas
+            self.property_choice.clear() # en la curva de las notas, la unica propiedad que tienen son las notas (falta implementar agregar los trills TODO)
             self.property_choice.addItems(['notes'])
-        self.property_choice.setCurrentIndex(data[1])
+        self.property_choice.setCurrentIndex(data[1]) 
 
+        # conectamos los cambios en los menus
         self.function_choice.currentIndexChanged.connect(self.function_change)
         self.property_choice.currentIndexChanged.connect(self.property_change)
 
+        # conectamos los botones de añadir, editar y eliminar
         self.addButton.clicked.connect(self.add_action)
         self.editButton.clicked.connect(self.edit_action)
         self.deleteButton.clicked.connect(self.delete_action)
+
+        # ahora llenamos las tablas con los elementos que corresponde
         self.poblate()
 
     def add_action(self):
-        if self.data[0] != 4:
-            if self.data[1] == 0:
-                data = [0, 0]
+        """
+        Permite añadir un elemento (punto, vibrato, filtro o nota) a alguna de las curvas elegidas.
+        Abre un formulario para llenar con los parametros necesarios y si la informacion es correcta agrega el elemento a la curva seleccionada
+        """
+        if self.data[0] != 4: # mientras no se haya elegido la quinta curva, la de las notas, se puede agregar puntos, vibratos o filtros
+            if self.data[1] == 0: # punto
+                data = [0, 0] # partimos con un punto en 0, 0
+                # fijamos los limites de acuerdo a la curva
                 if data[0] == 0:
                     min_v, max_v = 0, 100
                 elif data[0] == 1:
@@ -584,31 +662,31 @@ class FuncTableForm(QDialog, FuncTableDialog):
                     min_v, max_v = -99, 99
                 elif data[0] == 3:
                     min_v, max_v = 0, 50
-                dlg = PointForm(parent=self, data=data, max_t=self.data[2]['total_t'], min_v=min_v, max_v=max_v)
+                dlg = PointForm(parent=self, data=data, max_t=self.data[2]['total_t'], min_v=min_v, max_v=max_v) # creamos el formulario 
                 dlg.setWindowTitle("Add Point")
-                if dlg.exec():
+                if dlg.exec(): # si resulta exitoso agregamos el punto
                     new_x = data[0]
                     new_y = data[1]
-                    self.parent.add_item(self.data[0], self.data[1], [new_x, new_y])
-                    self.poblate()
-            elif self.data[1] == 1:
+                    self.parent.add_item(self.data[0], self.data[1], [new_x, new_y]) # le pedimos al parent (que es Window) que agregue el elemento
+                    self.poblate() # volvemos a poblar las tablas
+            elif self.data[1] == 1: # vibrato
                 data=[0, 0, 0, 0, 0]
-                dlg = VibratoForm(parent=self, data=data, max_t=self.data[2]['total_t'])
+                dlg = VibratoForm(parent=self, data=data, max_t=self.data[2]['total_t']) # creamos el formulario
                 dlg.setWindowTitle("Add Vibrato")
-                if dlg.exec():
+                if dlg.exec(): # si resulta exitoso lo agregamos
                     time_i = data[0]
                     duration = data[1]
                     amp = data[2]
                     freq = data[3]
                     window_v = windows_vibrato[data[4]]
-                    self.parent.add_item(self.data[0], self.data[1], [time_i, duration, amp, freq, window_v])
-                    self.poblate()
-            elif self.data[1] == 2:
+                    self.parent.add_item(self.data[0], self.data[1], [time_i, duration, amp, freq, window_v]) # le pedimos al parent (que es Window) que agregue el elemento
+                    self.poblate() # volvemos a poblar las tablas
+            elif self.data[1] == 2: # filtro
                 data=[0, 0] + [0 for i in range(14)]
                 while True:
-                    dlg = FilterForm(parent=self, data=data)
+                    dlg = FilterForm(parent=self, data=data) # creamos el formulario
                     dlg.setWindowTitle("Add Filter")
-                    if dlg.exec():
+                    if dlg.exec(): # si resulta exitoso lo agregamos
                         time_i = data[0]
                         time_f = data[1]
                         choice = data[2]
@@ -618,31 +696,35 @@ class FuncTableForm(QDialog, FuncTableDialog):
                             params = [data[10], data[11], data[12], data[13], data[14], data[15]]
                         else:
                             params = [data[6], data[7], data[8], data[9]]
-                        filter_choice = filter_choices[choice]
-                        if self.parent.check_filter(time_i, time_f, filter_choice, params):
-                            self.parent.add_item(self.data[0], self.data[1], [time_i, time_f, filter_choice, params])
-                            self.poblate()
+                        filter_choice = filter_choices[choice] # traducimos el filtro a un string
+                        if self.parent.check_filter(time_i, time_f, filter_choice, params): # revisamos que los parametros sean validos
+                            self.parent.add_item(self.data[0], self.data[1], [time_i, time_f, filter_choice, params]) # le pedimos al parent (que es Window) que agregue el elemento
+                            self.poblate() # volvemos a poblar las tablas
                             break
                     else:
                         break
-        else:
+        else: # si se selecciono la curva de las notas, solo se pueden agregar notas. Todavia no se implementa los trills TODO
             data = [self.last_note_t+0.1, self.last_note]
-            dlg = NoteForm(parent=self, data=data, max_t=self.data[2]['total_t'])
+            dlg = NoteForm(parent=self, data=data, max_t=self.data[2]['total_t'])  # creamos el formulario
             dlg.setWindowTitle("Add Note")
-            if dlg.exec():
+            if dlg.exec(): # si resulta exitoso lo agregamos
                 new_x = data[0]
-                new_y = dict_notes[data[1]/2]
+                new_y = dict_notes[data[1]/2] # traducimos el valor a una nota (string)
                 self.last_note_t = data[0]
                 self.last_note = data[1]
-                self.parent.add_item(4, 0, [new_x, new_y])
-                self.poblate()
+                self.parent.add_item(4, 0, [new_x, new_y]) # le pedimos al parent (que es Window) que agregue el elemento
+                self.poblate() # volvemos a poblar las tablas
 
     def edit_action(self):
-        if self.item_selected == None:
+        """
+        Permite editar un elemento (punto, vibrato, filtro o nota) de alguna de las curvas.
+        Abre un formulario para llenar con los parametros necesarios y si la informacion es correcta modifica el elemento
+        """
+        if self.item_selected == None: # este parametro cambia cuando se hace click sobre un elemento. Si no hay ningun elemento seleccionado, el boton edit no hace nada
             pass
         else:
-            if self.data[0] != 4:
-                route=self.data[self.data[0] + 2]
+            if self.data[0] != 4: # mientras no se haya seleccionado la quinta curva (la de las notas)
+                route=self.data[self.data[0] + 2] # en self.data se tienen las rutas de las 5 curvas, en orden y partiendo en 2
                 if self.data[1] == 0:
                     data = route['points'][self.item_selected]
                     dlg = PointForm(parent=self, data=data, max_t=self.data[2]['total_t'])

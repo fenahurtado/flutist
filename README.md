@@ -2,6 +2,9 @@
 
 En este repositorio se encuentra el codigo necesario para operar el sistema robotico para tocar flauta, Pierre.
 
+
+Organización del codigo
+-----
 Los archivos de codigo importantes y su contenido:
 
 | File   |     Content     |
@@ -15,5 +18,10 @@ Los archivos de codigo importantes y su contenido:
 | musician.py | Donde se aloja la clase Musician, que funciona como cerebro del robot, coordina las solicitudes del usuario con cada uno de los dispositivos |
 | route.py | Código para construir rutas definidas a partir de puntos en cada eje (l, theta, offset, flow y nota) en el tiempo, filtros y vibratos |
 | forms/forms.py | Codigo para interpretar la información entregada por el usuario en todos los formularios de la interfaz gráfica |
-| lib/ethernet_ip/ethernetip.py | Librería modificada para comunicacion mediante protocolo Ethernet IP |
+| lib/ethernet_ip/ethernetip.py | Librería modificada para comunicacion mediante protocolo Ethernet IP. Los cambios estan explicados en el encabezado del archivo |
 | plots/plot_window.py | Código de las ventanas que plotean funciones, una que se actualiza en tiempo real (una variable vs la referencia) y otra que no (visualización de la ruta definida y las velocidades en cada eje) |
+
+Cada archivo se encuentra comentado para que sea facil su comprension
+
+### PS Move
+Dentro de src se incluye una carpeta llamada psmoveapi. Esta carpeta es clonada de un proyecto que se encuentra en internet con algunas modificaciones. Ver el archivo README.md dentro de esta carpeta en la seccion *Observaciones Fernando* para entender los cambios que se le hizo.
