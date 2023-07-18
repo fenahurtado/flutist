@@ -1,0 +1,10 @@
+C:\Users\ferna\Documents\psmoveapi\src\tracker\psmove_tracker_hue_calibration.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\psmove_tracker_hue_calibration.obj
+C:\Users\ferna\Documents\psmoveapi\src\tracker\psmove_tracker.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\psmove_tracker.obj
+C:\Users\ferna\Documents\psmoveapi\src\tracker\psmove_fusion.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\psmove_fusion.obj
+C:\Users\ferna\Documents\psmoveapi\src\tracker\tracker_helpers.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\tracker_helpers.obj
+C:\Users\ferna\Documents\psmoveapi\src\tracker\camera_control.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\camera_control.obj
+C:\Users\ferna\Documents\psmoveapi\src\tracker\camera_control_driver.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\camera_control_driver.obj
+C:\Users\ferna\Documents\psmoveapi\src\tracker\camera_control_layouts.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\camera_control_layouts.obj
+C:\Users\ferna\Documents\psmoveapi\external\PS3EYEDriver\src\ps3eye.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\ps3eye.obj
+C:\Users\ferna\Documents\psmoveapi\external\PS3EYEDriver\src\ps3eye_capi.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\ps3eye_capi.obj
+C:\Users\ferna\Documents\psmoveapi\src\tracker\camera_control_driver_ps3eyedriver.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi_tracker.dir\Debug\camera_control_driver_ps3eyedriver.obj

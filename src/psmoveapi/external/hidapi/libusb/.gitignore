@@ -1,0 +1,9 @@
+*.o
+*.so
+*.la
+*.lo
+*.a
+.libs
+.deps
+hidtest-libusb
+*.swp

@@ -1,0 +1,52 @@
+name: Build from source
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - '**'
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: ${{ matrix.build_host }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - build_host: ubuntu-latest
+            build_type: linux-native-gcc
+          - build_host: macos-latest
+            build_type: macos-native-clang-x86_64
+          # Disabled until Github Actions gets support for M1 Macs.
+          # See also: https://github.com/actions/runner-images/issues/2187
+          #- build_host: macos-latest
+          #  build_type: macos-native-clang-arm64
+          - build_host: windows-latest
+            build_type: windows-native-msvc-x64
+    env:
+      BUILD_TYPE: ${{ matrix.build_type }}
+      VS170COMNTOOLS: "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Tools\\"
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          submodules: true
+      - name: Install dependencies
+        run: bash -e -x scripts/install_dependencies.sh
+      - name: Build package
+        run: bash -e -x scripts/build_package.sh
+      - uses: actions/upload-artifact@v3
+        with:
+          name: build-result
+          path: upload/*
+      - name: Upload release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          gh release create "${GITHUB_REF#refs/tags/}" || true
+          gh release upload "${GITHUB_REF#refs/tags/}" upload/* || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

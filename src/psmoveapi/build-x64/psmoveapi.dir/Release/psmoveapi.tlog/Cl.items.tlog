@@ -1,0 +1,11 @@
+C:\Users\ferna\Documents\psmoveapi\external\hidapi\windows\hid.c;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\hid.obj
+C:\Users\ferna\Documents\psmoveapi\src\psmove.c;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\psmove.obj
+C:\Users\ferna\Documents\psmoveapi\src\psmove_calibration.c;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\psmove_calibration.obj
+C:\Users\ferna\Documents\psmoveapi\src\psmove_orientation.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\psmove_orientation.obj
+C:\Users\ferna\Documents\psmoveapi\src\psmoveapi.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\psmoveapi.obj
+C:\Users\ferna\Documents\psmoveapi\src\daemon\moved_client.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\moved_client.obj
+C:\Users\ferna\Documents\psmoveapi\src\platform\psmove_port_windows.c;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\psmove_port_windows.obj
+C:\Users\ferna\Documents\psmoveapi\src\math\psmove_alignment.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\psmove_alignment.obj
+C:\Users\ferna\Documents\psmoveapi\src\math\psmove_math.c;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\psmove_math.obj
+C:\Users\ferna\Documents\psmoveapi\src\math\psmove_quaternion.cpp;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\psmove_quaternion.obj
+C:\Users\ferna\Documents\psmoveapi\src\math\psmove_vector.c;C:\Users\ferna\Documents\psmoveapi\build-x64\psmoveapi.dir\Release\psmove_vector.obj
