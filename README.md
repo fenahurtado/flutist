@@ -1,4 +1,5 @@
 # Pierre the Flutist Robot
+![](./diagrama.html)
 
 En este repositorio se encuentra el codigo necesario para operar el sistema robotico para tocar flauta, Pierre.
 
