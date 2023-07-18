@@ -28,7 +28,7 @@ Adicionalmente se entregan <a href="https://raw.githack.com/fenahurtado/pierre_f
 ### PS Move
 El programa ocupa el repositorio externo [psmove](https://github.com/thp/psmoveapi).
 Este debe ser descargado y se deben hacer los siguientes cambios:
-1. Reemplazar el archivo psmoveapi/src/CMakeList.txt por pierre_flutist/src/psmoveapi_mods/CMakeList.txt
+1. Reemplazar el archivo psmoveapi/src/CMakeList.txt por pierre_flutist/src/psmoveapi_mods/CMakeList.txt (o agregar la opcion `option(PSMOVE_BUILD_TRACKER "Enable Tracking" ON)` al CMakeList)
 2. Reemplazar el archivo psmoveapi/src/utils/test_tracker.cpp por pierre_flutist/src/psmoveapi_mods/test_tracker.cpp
 
 Luego, se debe compilar el proyecto. Para compilar desde Windows se corre el comando:
