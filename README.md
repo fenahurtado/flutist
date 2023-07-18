@@ -26,4 +26,12 @@ Cada archivo se encuentra comentado para que sea facil su comprension
 Adicionalmente se entregan <a href="https://raw.githack.com/fenahurtado/pierre_flutist/2342e8df5d2afb257ab0c29dc7ef6aa53c4fa293/diagrama.html" target="_blank">diagramas de flujo</a> de todo el codigo para entender mejor su funcionamiento
 
 ### PS Move
-Dentro de src se incluye una carpeta llamada psmoveapi. Esta carpeta es clonada de un proyecto que se encuentra en internet con algunas modificaciones. Ver el archivo README.md dentro de esta carpeta en la seccion *Observaciones Fernando* para entender los cambios que se le hizo.
+El programa ocupa el repositorio externo [psmove](https://github.com/thp/psmoveapi).
+Este debe ser descargado y se deben hacer los siguientes cambios:
+1. Reemplazar el archivo psmoveapi/src/CMakeList.txt por pierre_flutist/src/psmoveapi_mods/CMakeList.txt
+2. Reemplazar el archivo psmoveapi/src/utils/test_tracker.cpp por pierre_flutist/src/psmoveapi_mods/test_tracker.cpp
+
+Luego, se debe compilar el proyecto. Para compilar desde Windows se corre el comando:
+`call scripts/visualc/build_msvc.bat 2022 x64` en la *Developer Command Prompt for VS 2022*
+
+Finalmente para correr el script, se corre (dentro de la carpeta del build recien creada) `psmove test-tracker`.
