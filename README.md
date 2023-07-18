@@ -1,5 +1,4 @@
 # Pierre the Flutist Robot
-![](./diagrama.html)
 
 En este repositorio se encuentra el codigo necesario para operar el sistema robotico para tocar flauta, Pierre.
 
@@ -23,6 +22,8 @@ Los archivos de codigo importantes y su contenido:
 | plots/plot_window.py | Código de las ventanas que plotean funciones, una que se actualiza en tiempo real (una variable vs la referencia) y otra que no (visualización de la ruta definida y las velocidades en cada eje) |
 
 Cada archivo se encuentra comentado para que sea facil su comprension
+
+Adicionalmente se entregan <a href="https://raw.githack.com/fenahurtado/pierre_flutist/136c4f92fff5564a05e24d8e1bf0f0fe7a400c84/diagrama.html" target="_blank">diagramas de flujo</a> de todo el codigo para entender mejor su funcionamiento
 
 ### PS Move
 Dentro de src se incluye una carpeta llamada psmoveapi. Esta carpeta es clonada de un proyecto que se encuentra en internet con algunas modificaciones. Ver el archivo README.md dentro de esta carpeta en la seccion *Observaciones Fernando* para entender los cambios que se le hizo.
