@@ -1,5 +1,6 @@
 # Pierre the Flutist Robot
-![](./diagrama.html)
+
+[Ver diagramas de flujo](https://raw.githack.com/fenahurtado/pierre_flutist/136c4f92fff5564a05e24d8e1bf0f0fe7a400c84/diagrama.html)
 
 En este repositorio se encuentra el codigo necesario para operar el sistema robotico para tocar flauta, Pierre.
 
