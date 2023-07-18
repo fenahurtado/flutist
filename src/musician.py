@@ -114,7 +114,7 @@ class Musician(Process):
         
         ## creamos un objeto que se ocupa del microfono. Nuevamente es un sensor asique tampoco corre un eje virtual.
         self.mic_conn, mic_end_conn = Pipe()
-        self.mic_running = Event() # tambien creamos un evento especial para esta clase, que se cierra un tiempo despues del principal. 
+        self.mic_running = Event() # tambien creamos un evento especial para esta clase, para poder cambiar el microfono durante la ejecucion del programa (sin terminar el proceso)
         # los parametros de la deteccion de pitch, asi como el dispositivo que se usa se toman de settings.json. Si el dispositivo indicado no existe puede lanzar error. En ese caso cambiar a un dispositivo que si exista. Ver sd.query_devices() en tal caso
         self.microphone = Microphone(self.running, mic_end_conn, DATA['frequency_detection']['device'], DATA['frequency_detection']['method'], DATA['frequency_detection']['YIN'], DATA['frequency_detection']['pYIN'], self.mic_running, connected=self.mic_connect, verbose=False)
 

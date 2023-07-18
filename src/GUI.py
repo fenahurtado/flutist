@@ -845,6 +845,9 @@ class Window(QMainWindow, PlotWindow):
                 self.save()
                 self.clean_score()
                 self.filename = None
+        else:
+            self.clean_score()
+            self.filename = None
 
     def save(self):
         '''

@@ -621,8 +621,8 @@ class AMCIDriver(Process):
                     if message[0] == "change_control": # si se ordena cambiar los parametros del control
                         if self.Kp != message[1]['kp'] or self.Ki != message[1]['ki'] or self.Kd or self.Kd != message[1]['kd'] or self.acc != message[1]['acceleration'] or self.dec != message[1]['deceleration'] or self.virtual_axis_proportional_coef != message[1]['proportional_coef'] or self.Kp_vel != message[1]['kp_vel'] or self.Ki_vel != message[1]['ki_vel'] or self.Kd_vel != message[1]['kd_vel']:
                             print("Control loop changed")
-                            self.comm_data[self.hostname + '_out'] = self.get_return_to_command_mode_command().get_list_to_send()
-                            time.sleep(0.1)
+                            self.comm_data[self.hostname + '_out'] = self.get_return_to_command_mode_command().get_list_to_send() # se envia este mensaje primero para que el dispositivo salga del movimiento synchrostep (y actualice los cambios cuando se vuelva a iniciar el movimiento)
+                            time.sleep(0.1) 
 
                         self.Kp = message[1]['kp']
                         self.Ki = message[1]['ki']
