@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import scipy.signal as signal
 
 def get_new_route(t_total, Fs): # entrega un arreglo de ceros, de t_total segundos con una tasa de sampleo Fs
-    return np.zeros([int(t_total*Fs)])
+    return np.zeros([int(round(t_total*Fs, 0))])
 
 def get_rampa(t_init, t_change, delta_v, t_total, Fs=100): # entrega una arreglo de t_total segundos con una rampa que empieza en t_init, dura t_change y varia delta_v, con una tasa de sampleo Fs
     return np.pad(np.linspace(0, delta_v, int(round(t_change*Fs, 0))),(int(round(t_init*Fs, 0)), int(round(t_total*Fs,0))-int(round(t_init*Fs,0))-int(round(t_change*Fs, 0))), 'constant', constant_values=(0,delta_v))
@@ -14,7 +14,7 @@ def get_route_ramped(points, t_max, Fs=100):
     points = [[x_0, y_0], [x_1, y_1], ..., [x_N, y_N]]
     retorna un arreglo de t_max segundos, con una tasa de sampleo Fs, que pasa por los puntos especificados interpolando linealmente entre las muestras
     """
-    ramped = np.zeros([int(t_max*Fs)]) # partimos con un arreglo vacio
+    ramped = np.zeros([int(round(t_max*Fs, 0))]) # partimos con un arreglo vacio
     if len(points): # Si hay algun punto, en lugar de partir en cero partiremos en el valor del primer punto
         ramped += points[0][1]
     for i in range(len(points) - 1): # luego por cada punto adicional sumaremos al arreglo una rampa que lleva desde el punto actual al punto siguiente en linea recta
@@ -22,7 +22,7 @@ def get_route_ramped(points, t_max, Fs=100):
     return ramped 
 
 # definimos un diccionario con funciones para ventanas. Cada una de ellas despues se puede llamar esecificando el numero de muestras. Ej. ventanas['rect'](120)
-ventanas = {'rect': np.ones, 'triangular': np.bartlett, 'blackman': np.blackman, 'hamming': np.hamming, 'hanning': np.hanning, 'kaiser1': lambda x: np.kaiser(x, 1), 'kaiser2': lambda x: np.kaiser(x, 2), 'kaiser3': lambda x: np.kaiser(x, 3), 'kaiser4': lambda x: np.kaiser(x, 4), 'ramp': lambda x: np.linspace(0, 1, x)}
+ventanas = {'rect': np.ones, 'triangular': np.bartlett, 'blackman': np.blackman, 'hamming': np.hamming, 'hanning': np.hanning, 'kaiser1': lambda x: np.kaiser(x, 1), 'kaiser2': lambda x: np.kaiser(x, 2), 'kaiser3': lambda x: np.kaiser(x, 3), 'kaiser4': lambda x: np.kaiser(x, 4), 'ramp': lambda x: np.linspace(0, 1, x), 'reversed_ramp': lambda x: np.linspace(1, 0, x)}
 
 def sum_vibrato(func, t_inicio, t_vibrato, amp, freq, ventana, t_max, Fs=100): # esta funcion toma un arreglo func y le suma una sinusoide que parte en t_inicio, dura t_vibrato, tiene amplitud amp, frecuencia freq y se ventanea por una ventana a eleccion
     ventana = ventanas[ventana]

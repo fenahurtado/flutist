@@ -1540,6 +1540,7 @@ class FingersDriver(Process):
                 ref_note = self.virtual_fingers.note # actualiza la nota que debería tocar
                 if ref_note != last_note: # si es distinta a la anterior (que ya estaba digitada), envia un mensaje al controlador de los dedos con la nueva digitación para que la actualice
                     self.request_finger_action(dict_notes[ref_note])
+                    print(self.state)
                     self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state]) # a diferencia de los otros drivers, como los cambios de nota son menos frecuentes, se usa la mensajería explicita
                     last_note = ref_note
 
@@ -1559,7 +1560,7 @@ class FingersDriver(Process):
 
         # Modifica el estado de servos interno según un diccionario
         if req_note in instrument_dicts[self.instrument].keys():
-            servo = self.translate_fingers_to_servo(instrument_dicts[self.instrument][req_note])
+            servo = instrument_dicts[self.instrument][req_note] #self.translate_fingers_to_servo(instrument_dicts[self.instrument][req_note])
             self.state = int(servo[::-1].replace(' ', ''), 2).to_bytes(2, byteorder='little')
         else:
             print(f'Key error: {req_note} not in dict')

@@ -22,7 +22,7 @@ from src.manual_move_win import *
 
 from src.plots.plot_window import LivePlotWindow, PassivePlotWindow
 
-from src.forms.forms import PointForm, VibratoForm, windows_vibrato, FilterForm, filter_windows, filter_choices, FuncTableForm, NoteForm, DurationForm, CorrectionForm, ScaleTimeForm, SettingsForm, TrillForm
+from src.forms.forms import PointForm, VibratoForm, windows_vibrato, FilterForm, filter_windows, filter_choices, FuncTableForm, NoteForm, DurationForm, CorrectionForm, ScaleTimeForm, SettingsForm, TrillForm, StatesFromNotesForm
 
 
 class StartUpWindow(QSplashScreen, StartWindow):
@@ -1051,19 +1051,58 @@ class Window(QMainWindow, PlotWindow):
 
     def get_states_from_notes(self): # a partir de las notas escritas obtiene los estados para el resto de los parámetros
         global LOOK_UP_TABLE # usa el diccionario con las posiciones predefinidas para cada nota (que puede ser ajustado en la ventana de movimiento manual)
-        ## Primero borramos todos los puntos que se tenian en los otros cuatro parámetros (porque van a ser reescritos)
-        self.route['points'] = []
-        self.route2['points'] = []
-        self.route3['points'] = []
-        self.route4['points'] = []
-        for i in range(len(self.route5['notes'])): # entonces vamos nota por nota agregando los estados definidos por el diccionario
-            t = self.route5['notes'][i][0] # tiempo de la nota
-            n = self.route5['notes'][i][1] # nota a tocar
-            self.add_item(0, 0, [t, LOOK_UP_TABLE[n]['l']], from_func=True)
-            self.add_item(1, 0, [t, LOOK_UP_TABLE[n]['theta']], from_func=True)
-            self.add_item(2, 0, [t, LOOK_UP_TABLE[n]['offset']], from_func=True)
-            self.add_item(3, 0, [t, LOOK_UP_TABLE[n]['flow']], from_func=True)
-        self.changes_made() # informamos que hay cambios
+
+        data = [100, 0] # partimos haciendo las transiciones tan largas como sea posible (por defecto)
+        dlg = StatesFromNotesForm(parent=self, data=data) # primero se abre un formulario para preguntar por los parametros para la creacion de la partitura a partir de las notas
+        dlg.setWindowTitle("States from notes parameters")
+        if dlg.exec(): # si se cierra el formulario con OK
+            ## Borramos todos los puntos que se tenian en los otros cuatro parámetros (porque van a ser reescritos)
+            self.route['points'] = []
+            self.route2['points'] = []
+            self.route3['points'] = []
+            self.route4['points'] = []
+
+            # declaramos parametros para hacer las transiciones
+            transition = data[0]
+            offset = data[1]
+            t_past = 0
+            l_past = 0
+            theta_past = 0
+            of_past = 0
+            flow_past = 0
+            for i in range(len(self.route5['notes'])): # entonces vamos nota por nota agregando los estados definidos por el diccionario
+                t = self.route5['notes'][i][0] # tiempo de la nota
+                n = self.route5['notes'][i][1] # nota a tocar
+                if i == 0: # si es la primera nota sabemos que vamos a partir en su estado, no es necesaria una transicion
+                    tf = max(0, min(t+offset, self.route['total_t'])) # tiempo final de la transicion
+                    self.add_item(0, 0, [tf, LOOK_UP_TABLE[n]['l']], from_func=True)
+                    self.add_item(1, 0, [tf, LOOK_UP_TABLE[n]['theta']], from_func=True)
+                    self.add_item(2, 0, [tf, LOOK_UP_TABLE[n]['offset']], from_func=True)
+                    self.add_item(3, 0, [tf, LOOK_UP_TABLE[n]['flow']], from_func=True)
+                else:
+                    if t - transition < t_past: # si la nota anterior esta más proxima al tiempo que se pidio hacer la transicion, solo se agregan los puntos finales de la transicion (los de partida estaran dados por la nota anterior)
+                        tf = max(0, min(t+offset, self.route['total_t'])) # tiempo final de la transicion
+                        self.add_item(0, 0, [tf, LOOK_UP_TABLE[n]['l']], from_func=True)
+                        self.add_item(1, 0, [tf, LOOK_UP_TABLE[n]['theta']], from_func=True)
+                        self.add_item(2, 0, [tf, LOOK_UP_TABLE[n]['offset']], from_func=True)
+                        self.add_item(3, 0, [tf, LOOK_UP_TABLE[n]['flow']], from_func=True)
+                    else: # si la nota anterior está mas lejos temporalmente, se hace la transicion como se solicitó. Iniciando transition-offset segundos antes
+                        ti = max(0, min(t+offset-transition, self.route['total_t'])) # tiempo inicial de la transicion
+                        tf = max(0, min(t+offset, self.route['total_t'])) # tiempo final de la transicion
+                        self.add_item(0, 0, [ti, l_past], from_func=True)
+                        self.add_item(1, 0, [ti, theta_past], from_func=True)
+                        self.add_item(2, 0, [ti, of_past], from_func=True)
+                        self.add_item(3, 0, [ti, flow_past], from_func=True)
+                        self.add_item(0, 0, [tf, LOOK_UP_TABLE[n]['l']], from_func=True)
+                        self.add_item(1, 0, [tf, LOOK_UP_TABLE[n]['theta']], from_func=True)
+                        self.add_item(2, 0, [tf, LOOK_UP_TABLE[n]['offset']], from_func=True)
+                        self.add_item(3, 0, [tf, LOOK_UP_TABLE[n]['flow']], from_func=True)
+                t_past = t
+                l_past = LOOK_UP_TABLE[n]['l']
+                theta_past = LOOK_UP_TABLE[n]['theta']
+                of_past = LOOK_UP_TABLE[n]['offset']
+                flow_past = LOOK_UP_TABLE[n]['flow']
+            self.changes_made() # informamos que hay cambios
 
     def move_coursor(self, value): # mueve el cursor. Esta funcion se llama cuando se mueve el slider en la ventana principal
         t = self.route['total_t'] * value / 99
@@ -2315,6 +2354,19 @@ class Window(QMainWindow, PlotWindow):
 
     def check_filter(self, time_i, time_f, filter_choice, params): # evalua si los parametros elegidos para un filtro son validos
         ## TODO: implementar funcion que revise si el filtro es valido
+        if time_f < time_i:
+            return False
+        if filter_choice == 0: # ventana -> params = [window_choice, window_n, cutoff]
+            if params[1] == 0 or params[2] == 0:
+                return False
+        elif filter_choice == 1: # remez -> params = [Ap, As, fp, fs]
+            pass
+        elif filter_choice == 2: # butter -> params = [Ap, As, fp, fs]
+            pass
+        elif filter_choice == 3: # cheb -> params = [N, Ap, As, fp, fs, rp]
+            pass
+        elif filter_choice == 4: # elliptic -> params = [Ap, As, fp, fs]
+            pass
         return True 
 
     def find_moving_note_limits(self, notes, index, total_t): # busca los limites de movimiento para una nota en particular

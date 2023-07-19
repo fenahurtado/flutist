@@ -16,6 +16,7 @@ from src.forms.correction import Ui_Dialog as CorrectionFormDialog
 from src.forms.scale_time import Ui_Dialog as ScaleTimeFormDialog
 from src.forms.settings import Ui_Dialog as SettingsFormDialog
 from src.forms.trill import Ui_Dialog as TrillFormDialog
+from src.forms.states_from_notes import Ui_Dialog as StatesFromNotesDialog
 from src.route import dict_notes, dict_notes_rev
 from functools import partial
 from src.cinematica import *
@@ -441,7 +442,7 @@ class NoteForm(QDialog, NotesFormDialog):
         elif tag == 'value':
             self.data[1] = value
 
-windows_vibrato = ['rect', 'triangular', 'blackman', 'hamming', 'hanning', 'kaiser1', 'kaiser2', 'kaiser3', 'kaiser4', 'ramp']
+windows_vibrato = ['rect', 'triangular', 'blackman', 'hamming', 'hanning', 'kaiser1', 'kaiser2', 'kaiser3', 'kaiser4', 'ramp', 'reversed_ramp']
 class VibratoForm(QDialog, VibratoFormDialog):
     """
     Formulario para crear o editar un elemento de vibrato que se añadirá a una de las curvas para la trayectoria.
@@ -609,6 +610,31 @@ class FilterForm(QDialog, FilterFormDialog):
         elif tag == 'chebrp':
             self.data[15] = args[0]
 
+class StatesFromNotesForm(QDialog, StatesFromNotesDialog):
+    """
+    Formulario para llevar a cabo la operacion de crear los estados de una partitura en base a las notas ingresadas.
+    Debe ajustarse tiempo de duración de la transicion y el desfase que tiene el final de la transicion con la nota tocada
+    """
+    def __init__(self, parent=None, data=[0,0]):
+        super().__init__(parent) #super(Form, self).__init__(parent)
+        self.setupUi(self)
+        self.parent = parent
+        self.data = data
+
+        # fijamos los valores iniciales
+        self.transition_time.setValue(data[0])
+        self.transition_offset.setValue(data[1])
+
+        # conectamos los cambios en los campos con update_data
+        self.transition_time.valueChanged.connect(partial(self.update_data, 'transition_time'))
+        self.transition_offset.valueChanged.connect(partial(self.update_data, 'transition_offset'))
+
+    def update_data(self, tag, *args):
+        # actualiza self.data con los valores ingresados por el usuario
+        if tag == 'transition_time':
+            self.data[0] = args[0]
+        elif tag == 'transition_offset':
+            self.data[1] = args[0]
 
 class FuncTableForm(QDialog, FuncTableDialog):
     """
@@ -654,13 +680,13 @@ class FuncTableForm(QDialog, FuncTableDialog):
             if self.data[1] == 0: # punto
                 data = [0, 0] # partimos con un punto en 0, 0
                 # fijamos los limites de acuerdo a la curva
-                if data[0] == 0:
+                if self.data[0] == 0:
                     min_v, max_v = 0, 100
-                elif data[0] == 1:
+                elif self.data[0] == 1:
                     min_v, max_v = 20, 70
-                elif data[0] == 2:
+                elif self.data[0] == 2:
                     min_v, max_v = -99, 99
-                elif data[0] == 3:
+                elif self.data[0] == 3:
                     min_v, max_v = 0, 50
                 dlg = PointForm(parent=self, data=data, max_t=self.data[2]['total_t'], min_v=min_v, max_v=max_v) # creamos el formulario 
                 dlg.setWindowTitle("Add Point")
@@ -725,19 +751,19 @@ class FuncTableForm(QDialog, FuncTableDialog):
         else:
             if self.data[0] != 4: # mientras no se haya seleccionado la quinta curva (la de las notas)
                 route=self.data[self.data[0] + 2] # en self.data se tienen las rutas de las 5 curvas, en orden y partiendo en 2
-                if self.data[1] == 0:
-                    data = route['points'][self.item_selected]
+                if self.data[1] == 0: # si se quiere editar un punto
+                    data = route['points'][self.item_selected] # usamos la data de ese punto para prellenar el formulario
                     dlg = PointForm(parent=self, data=data, max_t=self.data[2]['total_t'])
                     dlg.setWindowTitle("Add Point")
                     if dlg.exec():
                         new_x = data[0]
                         new_y = data[1]
-                        self.parent.edit_item(self.data[0], self.data[1], self.item_selected, [new_x, new_y])
-                        self.poblate()
-                elif self.data[1] == 1:
-                    data = route['vibrato'][self.item_selected]
-                    data[4] = windows_vibrato.index(data[4])
-                    dlg = VibratoForm(parent=self, data=data, max_t=self.data[2]['total_t'])
+                        self.parent.edit_item(self.data[0], self.data[1], self.item_selected, [new_x, new_y]) # le pedimos a la ventana principal que edite el elemento y actualice los graficos
+                        self.poblate() # actualizamos la tabla
+                elif self.data[1] == 1: # si se quiere editar un vibrato
+                    data = route['vibrato'][self.item_selected] # usamos la data de ese vibrato para prellenar el formulario
+                    data[4] = windows_vibrato.index(data[4]) # traducimos la ventana a un indice
+                    dlg = VibratoForm(parent=self, data=data, max_t=self.data[2]['total_t']) 
                     dlg.setWindowTitle("Add Vibrato")
                     if dlg.exec():
                         time_i = data[0]
@@ -745,102 +771,118 @@ class FuncTableForm(QDialog, FuncTableDialog):
                         amp = data[2]
                         freq = data[3]
                         window_v = windows_vibrato[data[4]]
-                        self.parent.edit_item(self.data[0], self.data[1], self.item_selected, [time_i, duration, amp, freq, window_v])
-                        self.poblate()
+                        self.parent.edit_item(self.data[0], self.data[1], self.item_selected, [time_i, duration, amp, freq, window_v]) # le pedimos a la ventana principal que edite el elemento y actualice los graficos
+                        self.poblate() # actualizamos la tabla
                 elif self.data[1] == 2:
-                    data = [0, 0] + [0 for i in range(14)] # time_i, time_f, filter_choice, window_choice, window_n, cutoff, Ap, As, fp, fs, chebN, chebAp, chebAs, chebfp, chebfs, chebrp
-                    new_data = route['filters'][self.item_selected] # i_init, i_end, filter, params
-                    data[0] = new_data[0]
-                    data[1] = new_data[1]
-                    data[2] = filter_choices.index(new_data[2])
-                    if data[2] == 0:
-                        data[3] = filter_windows.index(new_data[3][0])
-                        data[4] = new_data[3][1]
-                        data[5] = new_data[3][2]
-                    elif data[2] == 3:
-                        data[10] = new_data[3][0]
-                        data[11] = new_data[3][1]
-                        data[12] = new_data[3][2]
-                        data[13] = new_data[3][3]
-                        data[14] = new_data[3][4]
-                        data[15] = new_data[3][5]
-                    else:
-                        data[6] = new_data[3][0]
-                        data[7] = new_data[3][1]
-                        data[8] = new_data[3][2]
-                        data[9] = new_data[3][3]
-                    while True:
+                    data = [0, 0] + [0 for i in range(14)]
+                    new_data = route['filters'][self.item_selected] # i_init, i_end, filter, params. usamos la data de ese filtro para prellenar el formulario.
+                    # en el caso de los filtros estos arreglos no coinciden, asique hay que formatearlo de acuerdo al tipo de filtro que sea
+                    data[0] = new_data[0] # time_i
+                    data[1] = new_data[1] # time_f
+                    data[2] = filter_choices.index(new_data[2]) # filter_choice
+                    if data[2] == 0: # de ventana
+                        data[3] = filter_windows.index(new_data[3][0]) # window_choice
+                        data[4] = new_data[3][1] # window_n
+                        data[5] = new_data[3][2] # cutoff
+                    elif data[2] == 3: # chebyshev
+                        data[10] = new_data[3][0] # chebN
+                        data[11] = new_data[3][1] # chebAp
+                        data[12] = new_data[3][2] # chebAs
+                        data[13] = new_data[3][3] # chebfp
+                        data[14] = new_data[3][4] # chebfs
+                        data[15] = new_data[3][5] # chebrp
+                    else: # remez, butter o elliptic
+                        data[6] = new_data[3][0] # Ap
+                        data[7] = new_data[3][1] # As
+                        data[8] = new_data[3][2] # fp
+                        data[9] = new_data[3][3] # fs
+                    while True: # lo hacemos dentro de un loop para iterar si los parametros del filtro no son validos
                         dlg = FilterForm(parent=self, data=data)
                         dlg.setWindowTitle("Add Filter")
                         if dlg.exec():
                             time_i = data[0]
                             time_f = data[1]
                             choice = data[2]
-                            if choice == 0:
+                            if choice == 0: # de ventana
                                 params = [filter_windows[data[3]], data[4], data[5]]
-                            elif choice == 3:
+                            elif choice == 3: # chebyshev
                                 params = [data[10], data[11], data[12], data[13], data[14], data[15]]
-                            else:
+                            else: # remez, butter o elliptic
                                 params = [data[6], data[7], data[8], data[9]]
-                            filter_choice = filter_choices[choice]
-                            if self.parent.check_filter(time_i, time_f, filter_choice, params):
-                                self.parent.edit_item(self.data[0], self.data[1], self.item_selected, [time_i, time_f, filter_choice, params])
-                                self.poblate()
+                            filter_choice = filter_choices[choice] # traducimos el indice a un label
+                            if self.parent.check_filter(time_i, time_f, filter_choice, params): # comprobamos que el filtro sea estable
+                                self.parent.edit_item(self.data[0], self.data[1], self.item_selected, [time_i, time_f, filter_choice, params]) # le pedimos a la ventana principal que edite el elemento y actualice los graficos
+                                self.poblate() # actualizamos la tabla
                                 break
                         else:
                             break
-            else:
-                data = self.data[6]['notes'][self.item_selected]
-                data[1] = int(round(dict_notes_rev[data[1]]*2, 0))
+            else: # si nos encontramos en la quinta curva (la de las notas), solo podemos editar las notas
+                data = self.data[6]['notes'][self.item_selected] # usamos la data de esa nota para prellenar el formulario.
+                data[1] = int(round(dict_notes_rev[data[1]]*2, 0)) # traducimos de nota a indice
                 dlg = NoteForm(parent=self, data=data, max_t=self.data[6]['total_t'])
                 dlg.setWindowTitle("Edit Note")
                 if dlg.exec():
-                    data[1] = dict_notes[data[1]/2]
-                    self.parent.edit_item(4, 0, self.item_selected, data)
-                    self.poblate()
+                    data[1] = dict_notes[data[1]/2] # traducimos de indice a nota
+                    self.parent.edit_item(4, 0, self.item_selected, data) # le pedimos a la ventana principal que edite el elemento y actualice los graficos
+                    self.poblate() # actualizamos la tabla
 
     def delete_action(self):
-        if self.item_selected == None:
+        """
+        Permite eliminar un elemento (punto, vibrato, filtro o nota) de alguna de las curvas.
+        """
+        if self.item_selected == None: # este parametro cambia cuando se hace click sobre un elemento. Si no hay ningun elemento seleccionado, el boton edit no hace nada
             pass
         else:
-            self.parent.delete_item(self.data[0], self.data[1], self.item_selected)
-            self.listWidget.takeItem(self.item_selected)
-        self.item_selected = None
+            self.parent.delete_item(self.data[0], self.data[1], self.item_selected) # le pedimos a la ventana principal que edite el elemento y actualice los graficos
+            self.listWidget.takeItem(self.item_selected) # eliminamos el elemento de la tabla
+        self.item_selected = None # soltamos este parametro (por si se apreta editar o eliminar nuevamente)
 
     def function_change(self, new_val):
-        self.item_selected = None
+        """
+        Esta funcion escucha cambios en la seleccion de la curva. Actualiza los datos de la tabla conforme a la curva que se seleccione
+        """
+        self.item_selected = None # se suelta cualquier seleccion que se tenga
         self.data[0] = new_val
-        if new_val == 4:
+        if new_val == 4: # la curva de las notas es la unica de las curvas que tiene distintas propiedades. En esta solo se tienen las notas
             self.data[1] = 0
             self.property_choice.clear()
             self.property_choice.addItems(['notes'])
-        else:
+        else: # las otras cuatro curvas tienen puntos, vibratos y filtros
             self.property_choice.clear()
             self.property_choice.addItems(['points', 'vibratos', 'filters'])
         self.poblate()
 
     def property_change(self, new_val):
+        """
+        Esta funcion escucha cambios en la seleccion del parametro de la curva. Actualiza los datos de la tabla conforme al parametro que se seleccione
+        """
         self.item_selected = None
         self.data[1] = new_val
         self.poblate()
 
     def poblate(self):
-        self.listWidget.clear()
-        self.route = self.data[self.data[0]+2]
-        if self.data[0] != 4:
-            if self.data[1] == 0:
+        """
+        Actualiza la lista que se muestra en pantalla
+        """
+        self.listWidget.clear() # borra la lista 
+        self.route = self.data[self.data[0]+2] # obtiene la ruta de la que sacar los datos
+        if self.data[0] != 4: # si no es la curva de las notas
+            if self.data[1] == 0: # queremos mostrar lo puntos de la curva seleccionada
                 for dot in self.route['points']:
-                    self.listWidget.addItem(f"t: {dot[0]}, y: {dot[1]}")
-            if self.data[1] == 1:
+                    self.listWidget.addItem(f"t: {dot[0]}, y: {dot[1]}") # mostramos el valor del punto y su tiempo
+            if self.data[1] == 1: # queremos mostrar lo vibratos de la curva seleccionada
                 for vib in self.route['vibrato']:
-                    self.listWidget.addItem(f"ti: {vib[0]}, d: {vib[1]}, amp: {vib[2]}, freq: {vib[3]}, win: {vib[4]}")
-            if self.data[1] == 2:
+                    self.listWidget.addItem(f"ti: {vib[0]}, d: {vib[1]}, amp: {vib[2]}, freq: {vib[3]}, win: {vib[4]}") # mostramos el tiempo de inicio del vibrato, su duracion, su amplitud, su frecuencia y la ventana por la que se multiplica el vibrato
+            if self.data[1] == 2: # queremos mostrar lo filtros de la curva seleccionada
                 for fil in self.route['filters']:
-                    self.listWidget.addItem(f"ti: {fil[0]}, tf: {fil[1]}, fil: {fil[2]}, params: {fil[3]}")
-        else:
+                    self.listWidget.addItem(f"ti: {fil[0]}, tf: {fil[1]}, fil: {fil[2]}, params: {fil[3]}") # mostramos el tiempo de inicio, el de fin, el tipo de filtro y sus parametros
+        else: # en este caso mostramos las notas (porque no tenemos otra propiedad)
             for n in self.route['notes']:
-                self.listWidget.addItem(f"{n[0]} s -> {n[1]}")
-        self.listWidget.itemClicked.connect(self.item_clicked)
+                self.listWidget.addItem(f"{n[0]} s -> {n[1]}") # agregamos nota por nota, mostrando que nota es y el tiempo en el que inicia
+        self.listWidget.itemClicked.connect(self.item_clicked) # conectamos la lista a item_clicked
     
     def item_clicked(self, item):
+        """
+        Escucha cuando se hace click sobre algun elemento de la lista y obtiene su indice
+        """
         self.item_selected = self.listWidget.row(item)

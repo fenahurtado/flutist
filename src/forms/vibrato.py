@@ -56,6 +56,7 @@ class Ui_Dialog(object):
         self.window_v.addItem("")
         self.window_v.addItem("")
         self.window_v.addItem("")
+        self.window_v.addItem("")
         self.gridLayout.addWidget(self.window_v, 4, 1, 1, 1)
         self.buttonBox = QtWidgets.QDialogButtonBox(Dialog)
         self.buttonBox.setOrientation(QtCore.Qt.Horizontal)
@@ -86,3 +87,4 @@ class Ui_Dialog(object):
         self.window_v.setItemText(7, _translate("Dialog", "kaiser3"))
         self.window_v.setItemText(8, _translate("Dialog", "kaiser4"))
         self.window_v.setItemText(9, _translate("Dialog", "ramp"))
+        self.window_v.setItemText(10, _translate("Dialog", "reversed_ramp"))

@@ -113,6 +113,11 @@
        <string>ramp</string>
       </property>
      </item>
+     <item>
+      <property name="text">
+       <string>reversed_ramp</string>
+      </property>
+     </item>
     </widget>
    </item>
    <item row="5" column="0" colspan="2">
