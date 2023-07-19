@@ -23,7 +23,7 @@ Los archivos de codigo importantes y su contenido:
 
 Cada archivo se encuentra comentado para que sea facil su comprension
 
-Adicionalmente se entregan <a href="https://raw.githack.com/fenahurtado/pierre_flutist/2342e8df5d2afb257ab0c29dc7ef6aa53c4fa293/diagrama.html" target="_blank">diagramas de flujo</a> de todo el codigo para entender mejor su funcionamiento
+Adicionalmente se entregan <a href="https://raw.githack.com/fenahurtado/pierre_flutist/cf3378f31c493d1e27e5e798b959a1f9c4f3be40/diagrama.html" target="_blank">diagramas de flujo</a> de todo el codigo para entender mejor su funcionamiento
 
 ### PS Move
 El programa ocupa el repositorio externo [psmove](https://github.com/thp/psmoveapi).
