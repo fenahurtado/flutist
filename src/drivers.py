@@ -477,8 +477,7 @@ class AMCIDriver(Process):
                     self.ccw_find_home_to_limit() # inicia la busqueda del origen. Esta rutina tiene dos etapas. Primero busca el origen a una velocidad mayor, cuando lo encuentra toma un poco de distancia y lo vuelve a buscar pero más lento para tener mayor precisión. 
                     self.fast_ccw_limit_homing = True # Inicia rápido hasta que se activa el limit switch
                     while self.fast_ccw_limit_homing or self.slow_ccw_limit_homing: # mientras no termine las dos etapas se mantiene en loop
-                        if self.verbose:
-                            print('Still not homed...')
+                        #print(self.hostname, 'Still not homed...', self.module_ok, self.stopped, self.move_complete, self.moving_ccw)
                         time.sleep(0.5)
                         #break
                         data = self.read_input() # lee el estado del motor. 
@@ -492,9 +491,10 @@ class AMCIDriver(Process):
                                 self.slow_ccw_limit_homing = True # ahora intentará buscar el origen mas lento
                                 self.fast_ccw_limit_homing = False
                                 # Para esto usamos un assembly move, donde primero se aleja una distancia y luego vuelve mas lento
-                                steps = [{'pos': 200, 'speed': 400, 'acc': 400, 'dec': 400, 'jerk': 0}, 
-                                            {'pos': -250, 'speed': 100, 'acc': 400, 'dec': 400, 'jerk': 0}]
+                                steps = [{'pos': 300, 'speed': 400, 'acc': 400, 'dec': 400, 'jerk': 0}, 
+                                            {'pos': -350, 'speed': 100, 'acc': 400, 'dec': 400, 'jerk': 0}]
                                 self.program_run_assembled_move(steps, dwell_move=1, dwell_time=100, motor_current=self.motor_current)
+                                time.sleep(1)
 
                             elif self.slow_ccw_limit_homing: # si estaba moviendose lento cuando se activo la condición se sale del loop
                                 if self.verbose:
@@ -538,8 +538,7 @@ class AMCIDriver(Process):
                     self.cw_find_home_to_limit()
                     self.fast_cw_limit_homing = True
                     while self.fast_cw_limit_homing or self.slow_cw_limit_homing:
-                        if self.verbose:
-                            print('Still not homed...')
+                        #print(self.hostname, 'Still not homed...', self.module_ok, self.stopped, self.move_complete, self.moving_cw)
                         time.sleep(0.5)
                         #break
                         data = self.read_input()
@@ -556,6 +555,7 @@ class AMCIDriver(Process):
                                 steps = [{'pos': -4000, 'speed': 2000, 'acc': 400, 'dec': 400, 'jerk': 0}, 
                                             {'pos': 4500, 'speed': 800, 'acc': 400, 'dec': 400, 'jerk': 0}]
                                 self.program_run_assembled_move(steps, dwell_move=1, dwell_time=100, motor_current=self.motor_current)
+                                time.sleep(2.5)
                                 
                             elif self.slow_cw_limit_homing:
                                 if self.verbose:
@@ -672,7 +672,7 @@ class AMCIDriver(Process):
 
         self.last_pos = CV
 
-        return self.MV, self.MV_vel
+        return int(round(SP, 0)), int(round(SP_vel, 0)) #self.MV, self.MV_vel
     
     def sat(self, x, low, high): # satura x en low y high
         if x < low:
@@ -1302,18 +1302,22 @@ class VirtualFingers(threading.Thread):
         threading.Thread.__init__(self) # Initialize the threading superclass self.running, 0.05, self.t0, self.ref_pipe
         self.running = running
         self.ref = [(0,0)] # la ruta es una lista donde cada elemento es de la forma (tiempo, nota)
+        self.lips_surface_ref = [(0,31)] # la ruta es una lista donde cada elemento es de la forma (tiempo, apertura)
+        self.tongue_ref = [(0,0)] # la ruta es una lista donde cada elemento es de la forma (tiempo, apertura)
         self.t0 = t0
         self.verbose = verbose
         self.interval = interval
         self.pipe_end = pipe_end
         self.note = 0
+        self.aperture = 31
+        self.tongue = 0
         
     def run(self):
         while self.running.is_set(): # corre durante toda la ejecución principal
             t = time.time() - self.t0
-            self.note = self.get_ref(t) # de acuerdo al tiempo actual actualiza la nota a partir de la ruta
+            self.note, self.aperture, self.tongue = self.get_ref(t) # de acuerdo al tiempo actual actualiza la nota a partir de la ruta
             if self.verbose:
-                print(t, self.note)
+                print(t, self.note, self.aperture, self.tongue)
             self.update_ref(t) # actualiza la lista eliminando los datos de tiempo menor al actual
             if self.pipe_end.poll(self.interval): # escucha si hay alguna instruccion. Si no lo hay luego de los self.interval ms avanza
                 message = self.pipe_end.recv()
@@ -1326,19 +1330,39 @@ class VirtualFingers(threading.Thread):
                     self.merge_ref(message[1])
                 elif message[0] == "stop": # se envia esta instrucción desde un proceso distinto para detener el cambio de notas
                     self.stop()
+                elif message[0] == "merge_lips_surface_ref": # este simulador tambien tiene la referencia para la apertura de los labios
+                    self.merge_lips_surface_ref(message[1])
+                elif message[0] == "merge_tongue_ref": # este simulador tambien tiene la referencia para la apertura de los labios
+                    self.merge_tongue_ref(message[1])
 
     def get_ref(self, t): # actualiza la nota a digitar para el tiempo actual de acuerdo a la ruta referencia
         if self.ref[-1][0] > t: # si la ruta esta definida hasta un t_final > t_actual
             for i in self.ref:
                 if i[0] > t:
-                    return i[1] # busca el primer elemento de la ruta cuyo tiempo sea mayor al actual. A diferencia de los otros ejes virtuales, las notas son discretas por lo que no es necesario hacer una interpolacion
+                    pos = i[1] # busca el primer elemento de la ruta cuyo tiempo sea mayor al actual. A diferencia de los otros ejes virtuales, las notas son discretas por lo que no es necesario hacer una interpolacion
         else:
             pos = self.ref[-1][1] # si t_actual > t_final de la ruta referencia la nota se mantiene
-        return pos
+        if self.lips_surface_ref[-1][0] > t: # si la ruta esta definida hasta un t_final > t_actual
+            for i in self.lips_surface_ref:
+                if i[0] > t:
+                    apertura = i[1] # busca el primer elemento de la ruta cuyo tiempo sea mayor al actual. A diferencia de los otros ejes virtuales, las notas son discretas por lo que no es necesario hacer una interpolacion
+        else:
+            apertura = self.lips_surface_ref[-1][1] # si t_actual > t_final de la ruta referencia la nota se mantiene
+        if self.tongue_ref[-1][0] > t: # si la ruta esta definida hasta un t_final > t_actual
+            for i in self.tongue_ref:
+                if i[0] > t:
+                    tongue = i[1] # busca el primer elemento de la ruta cuyo tiempo sea mayor al actual. A diferencia de los otros ejes virtuales, las notas son discretas por lo que no es necesario hacer una interpolacion
+        else:
+            tongue = self.tongue_ref[-1][1] # si t_actual > t_final de la ruta referencia la nota se mantiene
+        return pos, apertura, tongue
 
     def update_ref(self, t): # actualiza la ruta borrando todos los elementos con t < t_actual (dejando al menos un elemento en la lista)
         while self.ref[0][0] < t and len(self.ref) > 1:
             self.ref.pop(0)
+        while self.lips_surface_ref[0][0] < t and len(self.lips_surface_ref) > 1:
+            self.lips_surface_ref.pop(0)
+        while self.tongue_ref[0][0] < t and len(self.tongue_ref) > 1:
+            self.tongue_ref.pop(0)
 
     def merge_ref(self, new_ref): # agrega o reemplaza elementos a la ruta
         t_change = new_ref[0][0]
@@ -1352,8 +1376,34 @@ class VirtualFingers(threading.Thread):
                 self.ref.pop()
             self.ref += new_ref
     
+    def merge_lips_surface_ref(self, new_ref): # agrega o reemplaza elementos a la ruta
+        t_change = new_ref[0][0]
+        if self.lips_surface_ref[-1][0] < t_change:  # si el t del ultimo elemento de la ruta anterior es menor al primero de la ruta que se quiere agregar, simplemente se agrega
+            self.lips_surface_ref += new_ref
+        else: # si hay solapado entre las rutas, se reemplaza la anterior por la nueva.
+            i = 0
+            while self.lips_surface_ref[i][0] < t_change:
+                i += 1
+            for _ in range(i, len(self.lips_surface_ref)):
+                self.lips_surface_ref.pop()
+            self.lips_surface_ref += new_ref
+
+    def merge_tongue_ref(self, new_ref):
+        t_change = new_ref[0][0]
+        if self.tongue_ref[-1][0] < t_change:  # si el t del ultimo elemento de la ruta anterior es menor al primero de la ruta que se quiere agregar, simplemente se agrega
+            self.tongue_ref += new_ref
+        else: # si hay solapado entre las rutas, se reemplaza la anterior por la nueva.
+            i = 0
+            while self.tongue_ref[i][0] < t_change:
+                i += 1
+            for _ in range(i, len(self.tongue_ref)):
+                self.tongue_ref.pop()
+            self.tongue_ref += new_ref
+
     def stop(self): # para eliminar los siguientes cambios de nota, elimina toda la ruta y deja el dedaje en la última nota tocada
         self.ref = [(0,self.note)]
+        self.lips_surface_ref = [(0,31)]
+        self.tongue_ref = [(0,0)]
 
 class PressureSensor(Process):
     """
@@ -1514,11 +1564,11 @@ class FingersDriver(Process):
         self.verbose = verbose
         self.hostname = hostname
         self.comm_pipe = comm_pipe # pipe que conecta a la central de comunicacion
-        
+        self.note_played = Array('c', b'D3 ')
         # Variables de músico
         self.instrument = instrument #instrumento seleccionado. Define el diccionario a usar y las llaves disponibles
         self.note_dict = instrument_dicts[instrument]
-        self.state = '000000000' 
+        self.state = '0011111000000000' 
 
         if self.connected:
             self.comm_pipe.send(["explicit_conn", self.hostname, 2*8, 1*8, 1, 2, ethernetip.EtherNetIP.ENIP_IO_TYPE_INPUT, 101, ethernetip.EtherNetIP.ENIP_IO_TYPE_OUTPUT, 100])
@@ -1529,8 +1579,10 @@ class FingersDriver(Process):
         self.virtual_fingers = VirtualFingers(self.running, 0.05, self.t0, self.ref_pipe, verbose=False)
         self.virtual_fingers.start()
         last_note = -1
+        last_aperture = -1
+        last_tongue = -1
         self.pipe_end.send(["finger_driver_started"]) ## avisamos que el driver esta funcionando (para saltar el start-up menu)
-
+        
         if self.connected:
             self.comm_pipe.send(["registerSession", self.hostname])
             time.sleep(0.1)
@@ -1538,15 +1590,28 @@ class FingersDriver(Process):
             while self.running.is_set():
                 time.sleep(0.02) # tasa de actualizacion. Es un poco mayor a la de los demas procesos
                 ref_note = self.virtual_fingers.note # actualiza la nota que debería tocar
-                if ref_note != last_note: # si es distinta a la anterior (que ya estaba digitada), envia un mensaje al controlador de los dedos con la nueva digitación para que la actualice
-                    self.request_finger_action(dict_notes[ref_note])
-                    print(self.state)
+                ref_aperture = self.virtual_fingers.aperture
+                ref_tongue = self.virtual_fingers.tongue
+                if ref_note != last_note or ref_aperture != last_aperture or ref_tongue != last_tongue: # si es distinta a la anterior (que ya estaba digitada), envia un mensaje al controlador de los dedos con la nueva digitación para que la actualice
+                    # Modifica el estado de servos interno según un diccionario
+                    if dict_notes[ref_note] in instrument_dicts[self.instrument].keys():
+                        dedos = instrument_dicts[self.instrument][dict_notes[ref_note]] #self.translate_fingers_to_servo(instrument_dicts[self.instrument][req_note])
+                        to_send = format(ref_tongue, '02b')[::-1] + format(ref_aperture, '05b')[::-1] + dedos[::-1].replace(' ', '')
+                        print(to_send)
+                        self.state = int(to_send, 2).to_bytes(2, byteorder='little')
+                    else:
+                        print(f'Key error: {dict_notes[ref_note]} not in dict')
+                    #print(self.state)
+
+                    self.note_played.value = bytes(dict_notes[ref_note].ljust(3, ' '), 'utf-8')
                     self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state]) # a diferencia de los otros drivers, como los cambios de nota son menos frecuentes, se usa la mensajería explicita
                     last_note = ref_note
+                    last_aperture = ref_aperture
+                    last_tongue = ref_tongue
 
             # antes de cerrar el programa se abren todas las llaves para acceder más facil a la flauta en caso de que quiera ser removida. Tambien funciona por seguridad para que no se gasten las gomas de las llaves si se dejan mucho tiempo cerradas
-            servo = self.translate_fingers_to_servo('00000 0000')
-            self.state = int(servo[::-1].replace(' ', ''), 2).to_bytes(2, byteorder='little')
+        
+            self.state = int('0011111000000000', 2).to_bytes(2, byteorder='little')
             self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state])
 
             time.sleep(0.1)
@@ -1600,6 +1665,7 @@ class Microphone(Process):
         self.max_num_points = int(self.sr*0.1) # puntos que usa para la detección de pitch. 
         self.last_mic_data = np.array([]) # array con la info escuchada mas recientemente, donde se mantienen self.max_num_points valores
         self.saving = False # bool para grabar 
+        self.next_saving = False
         # self.mic_data = np.array([])
         self.mic_running = mic_running
         self.mic_running.set()
@@ -1612,24 +1678,32 @@ class Microphone(Process):
         self.last_mic_data = np.hstack((self.last_mic_data, np.transpose(indata)[0]))
         self.last_mic_data = self.last_mic_data[-self.max_num_points:]
         if self.saving: # si estamos grabando escribimos la info nueva en el buffer
-            self.buffer.write(indata.copy())
+            if not self.next_saving:
+                self.saving = False
+            self.buffer.write(np.transpose(indata)[0].copy())
 
     def start_saving(self): # para empezar a grabar
         # self.mic_data = np.array([])
         self.saving = True
+        self.next_saving = True
     
     def pause_saving(self): # para pausar la grabacion
-        self.saving = False
+        self.next_saving = False
 
     def resume_saving(self): # para resumir la grabacion
         self.saving = True
+        self.next_saving = True
     
     def finish_saving(self, file_name): # para finalizar la grabacion y guardar el archivo
-        self.saving = False_
+        self.next_saving = False
+        while self.saving:
+            pass
         self.buffer.seek(0)
         deserialized_bytes = np.frombuffer(self.buffer.read(), dtype=np.float32)
         write(file_name, self.sr, deserialized_bytes)
+        self.buffer.seek(0)
         self.buffer.truncate(0) # reseteamos el buffer
+        
 
     def handle_messages(self):
         if self.end_pipe.poll(0.05): # revisa si hay alguna instruccion de otro proceso. Si no recibe nada en 0.05 ms avanza

@@ -21,6 +21,7 @@ class CommunicationCenter(Process):
         self.data = data
         self.verbose = verbose
         self.connect = connect
+        self.implicit_conn = {}
     
     def send_setAttrSingle(self, C1, data, device, dir1, dir2, dir3):
         ## para settear atributos de forma explicita. Si falla porque se cerró la conexion, se vuelve a abrir
@@ -42,6 +43,7 @@ class CommunicationCenter(Process):
                     # en la memoria compartida se actualiza la entrada de cada dispositivo y se usa lee lo que se quiere poner a la salida para actualizar el mensaje a cada dispositivo. 
                     # conn.inAssem es la entrada de cada dispositivo (de lectura)
                     # conn.outAssem es la salida a cada dispositivo (de escritura)
+                    # if self.implicit_conn[host]:
                     self.data[host + '_in'] = conn.inAssem
                     conn.outAssem = self.data[host + '_out']
                 except:
@@ -55,6 +57,7 @@ class CommunicationCenter(Process):
                     C1 = self.EIP.explicit_conn(message[1]) # se crea la conexión con la dirección IP
                     C1.outAssem = [0 for i in range(message[2])]
                     C1.inAssem = [0 for i in range(message[3])]
+                    self.implicit_conn[message[1]] = False
 
                     pkt = C1.listID()
                     if pkt is not None:
@@ -82,12 +85,14 @@ class CommunicationCenter(Process):
                     # comienza la comunicación implicita con el dispositivo cuya direccion se informa en message[1]
                     self.connections[message[1]].sendFwdOpenReq(message[2], message[3], message[4], torpi=message[5], otrpi=message[6], priority=message[7])
                     self.connections[message[1]].produce()
+                    self.implicit_conn[message[1]] = True
 
                 elif message[0] == "stopProduce":
                     # termina la comunicación implicita con el dispositivo cuya direccion se informa en message[1]
                     self.connections[message[1]].stopProduce()
                     self.connections[message[1]].sendFwdCloseReq(message[2], message[3], message[4])
                     del self.connections[message[1]]
+                    self.implicit_conn[message[1]] = False
                 
                 elif message[0] == "setAttrSingle":
                     self.connections[message[1]] = self.send_setAttrSingle(self.connections[message[1]], message[5], message[1], message[2], message[3], message[4])

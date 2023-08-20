@@ -80,7 +80,19 @@ class ManualWindow(QMainWindow, ManualWindow):
         self.noteComboBox.currentIndexChanged.connect(self.change_note)
         self.speedSlider1.valueChanged.connect(self.change_speed)
         self.pivotGoButton.clicked.connect(self.pivot)
+        self.tongue_slider.valueChanged.connect(self.tongue_move_pressed)
+        # self.tongue_slider.sliderReleased.connect(self.tongue_move_released)
+        self.lips_surface_slider.valueChanged.connect(self.change_lips_surface)
     
+    def tongue_move_pressed(self, value):
+        self.musician_pipe.send(['execute_tongue_action', value])
+
+    # def tongue_move_released(self):
+    #     self.tongue_slider.setValue(0)
+
+    def change_lips_surface(self, value):
+        self.musician_pipe.send(['execute_lips_surface_action', value]) # se envia primero la instruccion de cambiar la digitacion
+
     def rotate(self, x1, z1, xr, zr, alpha): # funcion para encontrar la posicion final de una rotacion en alpha grados de un punto, con centro de rotacion en xr, zr
         xf = (x1 - xr) * np.cos(alpha) - (z1 - zr) * np.sin(alpha) + xr
         zf = (x1 - xr) * np.sin(alpha) + (z1 - zr) * np.cos(alpha) + zr
@@ -266,7 +278,7 @@ class ManualWindow(QMainWindow, ManualWindow):
         # Update the value in the dictionary
         LOOK_UP_TABLE[key][key2] = new_value
 
-        with open('new_interface/look_up_table.json', 'w') as file: # inmediatamente se actualiza la lista en el archivo, asi cuando se vuelve a correr el programa quedan guardados los valores
+        with open('src/look_up_table.json', 'w') as file: # inmediatamente se actualiza la lista en el archivo, asi cuando se vuelve a correr el programa quedan guardados los valores
             json.dump(LOOK_UP_TABLE, file, indent=4, sort_keys=False)
         
 

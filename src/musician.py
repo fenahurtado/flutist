@@ -121,7 +121,7 @@ class Musician(Process):
         print("Drivers created...\nCreating memory...")
         ## se crearon todos los drivers que interactuan con dispositivos, ahora se crea un objeto 'memoria' que se ocupa de leer todos los sensores de forma sincrona y llevar un registro de sus lecturas
         self.memory_conn, memory_end_conn = Pipe() # tambien se crea un pipe para conectarse a este objeto y enviarle instrucciones como que empiece o termine de grabar
-        self.memory = Memory(self.running, self.x_driver, self.z_driver, self.alpha_driver, self.flow_driver, self.preasure_sensor, self.microphone, memory_end_conn, self.data, windowWidth=200, interval=0.01)
+        self.memory = Memory(self.running, self.x_driver, self.z_driver, self.alpha_driver, self.flow_driver, self.preasure_sensor, self.microphone, self.fingers_driver, memory_end_conn, self.data, windowWidth=200, interval=0.01)
 
         print("Memory created...\nStarting...")
         ## habiendo creado todos los objetos, se empiezan a correr. 
@@ -189,6 +189,10 @@ class Musician(Process):
                 message = self.end_pipe.recv() # si hay mensaje lo recibimos y vemos que dice. El primer elemento del mensaje será un label de la operacion a realizar
                 if message[0] == "execute_fingers_action": # si se pide un cambio de digitacion de dedos
                     self.virtual_fingers_conn.send(["merge_ref", [(0, message[1])]]) # se crea una ruta para el eje virtual de los dedos: [(0, message[1])] y se envia una solicitud de merge_ref
+                elif message[0] == "execute_lips_surface_action": # si se pide un cambio en la apertura de los labios
+                    self.virtual_fingers_conn.send(["merge_lips_surface_ref", [(0, message[1])]])
+                elif message[0] == "execute_tongue_action": # si se pide un cambio en la posicion de la lengua
+                    self.virtual_fingers_conn.send(["merge_tongue_ref", [(0, message[1])]])
                 elif message[0] == "move_to": # se pide un cambio de estado
                     # en este caso message[1] es un objeto State (del estado al que se quiere mover), message[2] dice el tiempo en el que se quiere realizar el movimiento (si es None se calcula en base a la velocidad), message[3] condicion que indica que el movimiento es exclusivamente en el eje X, message[4] condicion que indica que el movimiento es exclusivamente en el eje Z, message[5] condicion que indica que el movimiento es exclusivamente en el eje alpha, message[6] condicion que indica que el movimiento es exclusivamente de flujo y message[7] la velocidad a la que se quiere mover (de 1 a 100)
                     self.move_to(message[1], T=message[2], only_x=message[3], only_z=message[4], only_alpha=message[5], only_flow=message[6], speed=message[7]) # ejecutamos la funcion move_to con todos los parametros entregados desde la interfaz de usuario
@@ -216,6 +220,14 @@ class Musician(Process):
                         self.memory_conn.send(["start_saving"]) # la memoria va guardando los valores de cada parametro
                         self.mic_conn.send(["start_saving"]) # el microfono graba un buffer con el audio
                     self.start_loaded_script() # funcion que ejecuta las rutas pre-cargadas
+                elif  message[0] == "start_free_recording": # 
+                    self.memory_conn.send(["start_saving"]) # la memoria va guardando los valores de cada parametro
+                    self.mic_conn.send(["start_saving"]) # el microfono graba un buffer con el audio
+                elif  message[0] == "stop_free_recording": # 
+                    self.memory_conn.send(["stop_recording"]) # la memoria va guardando los valores de cada parametro
+                    self.mic_conn.send(["stop_recording"]) # el microfono graba un buffer con el audio
+                    self.memory_conn.send(["save_recorded_data", message[1]])
+                    self.mic_conn.send(["save_recorded_data", message[2]])
                 elif message[0] == "stop_playing": # si se pide que se deje de ejecutar una trayectoria
                     self.stop() # para los motores y lleva el flujo a 0
                     if message[1]: # si se estaba grabando, se termina de grabar
@@ -421,7 +433,7 @@ class Memory(Process):
     """
     Esta clase se encarga de almacenar la historia de las variables medidas. windowWidth dice la cantidad de datos a almacenar e interval el tiempo (en milisegundos) para obtener una muestra.
     """
-    def __init__(self, running, x_driver, z_driver, alpha_driver, flow_controller, pressure_sensor, microphone, pipe_end, data, windowWidth=200, interval=0.05):
+    def __init__(self, running, x_driver, z_driver, alpha_driver, flow_controller, pressure_sensor, microphone, fingers_driver, pipe_end, data, windowWidth=200, interval=0.05):
         Process.__init__(self) # Initialize the threading superclass
         self.saving = False
         self.x_driver = x_driver
@@ -430,6 +442,7 @@ class Memory(Process):
         self.flow_controller = flow_controller
         self.pressure_sensor = pressure_sensor
         self.microphone = microphone
+        self.fingers_driver = fingers_driver
         self.pipe_end = pipe_end # pipe que conecta con el musico
         self.windowWidth = windowWidth
 
@@ -468,6 +481,7 @@ class Memory(Process):
         self.data['mass_flow'] = linspace(0,0,200)
         self.data['temperature'] = linspace(0,0,200)
         self.data['frequency'] = linspace(0,0,200)
+        self.data['notes'] = ['D3' for i in range(200)]
         self.data['times'] = linspace(0,0,200)
         
         self.t0 = time.time()
@@ -484,6 +498,7 @@ class Memory(Process):
         self.pipe_end.send(["memory_started"]) # se avisa al musico que la memoria ya esta operativa
         while self.running.is_set():
             # en cada iteracion actualizamos los valores del estado referencia y el estado real leyendo los encoders y los ejes virtuales
+            #print(self.fingers_driver.note_played.value.decode('utf-8').strip(), end="")
             self.ref_state.x = x_units_to_mm(self.x_driver.pos_ref.value)
             self.ref_state.z = z_units_to_mm(self.z_driver.pos_ref.value)
             self.ref_state.alpha = alpha_units_to_angle(self.alpha_driver.pos_ref.value)
@@ -513,12 +528,13 @@ class Memory(Process):
             self.data['mass_flow'] = np.hstack([self.data['mass_flow'][1:], self.flow_controller.mass_flow_reading.value])
             self.data['temperature'] = np.hstack([self.data['temperature'][1:], self.flow_controller.temperature_reading.value])
             self.data['frequency'] = np.hstack([self.data['frequency'][1:], self.microphone.pitch.value])
+            self.data['notes'] = self.data['notes'][1:] + [self.fingers_driver.note_played.value.decode('utf-8').strip()]
             self.data['times'] = np.hstack([self.data['times'][1:], time.time() - self.t0])  
             if self.saving: # si esta condicion esta activa agregaremos el estado actual al dataframe como una entrada
                 if self.first_entry: # si es la primera entrada del data frame, tomamos el tiempo actual y lo usamos como tiempo inicial para desfasar todas las entradas, y asi partir en cero
                     self.t1 = self.data['times'][-1]
                     self.first_entry = False
-                new_data = pd.DataFrame([[self.data['times'][-1] - self.t1, self.data['frequency'][-1], self.data["temperature"][-1], self.data["mass_flow"][-1], self.data["volume_flow"][-1], self.data["mouth_pressure"][-1], self.data["offset"][-1], self.data["theta"][-1], self.data["radius"][-1], self.data["offset_ref"][-1], self.data["theta_ref"][-1], self.data["radius_ref"][-1], self.data["alpha"][-1], self.data["z"][-1], self.data["x"][-1], self.data["alpha_ref"][-1], self.data["z_ref"][-1], self.data["x_ref"][-1], self.data["flow_ref"][-1]]], columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'offset_ref', 'theta_ref', 'radius_ref', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref']) # creamos la nueva entrada
+                new_data = pd.DataFrame([[self.data['times'][-1] - self.t1, self.data['frequency'][-1], self.data["temperature"][-1], self.data["mass_flow"][-1], self.data["volume_flow"][-1], self.data["mouth_pressure"][-1], self.data["offset"][-1], self.data["theta"][-1], self.data["radius"][-1], self.data["offset_ref"][-1], self.data["theta_ref"][-1], self.data["radius_ref"][-1], self.data["alpha"][-1], self.data["z"][-1], self.data["x"][-1], self.data["alpha_ref"][-1], self.data["z_ref"][-1], self.data["x_ref"][-1], self.data["flow_ref"][-1], self.data['notes'][-1]]], columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'offset_ref', 'theta_ref', 'radius_ref', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref', 'note']) # creamos la nueva entrada
                 self.data_frame = pd.concat([self.data_frame, new_data], ignore_index=True) # y la concatenamos con lo que teniamos
             
             if self.pipe_end.poll(self.interval): # luego escuchamos si hay instrucciones del musico. Acá esperamos 0.01s
@@ -534,7 +550,7 @@ class Memory(Process):
     
     def start_saving(self): # funcion para empezar a grabar datos leidos. Si habían datos grabados de antes, se formatean para empezar denuevo
         self.first_entry = True # se activa esta condicion para tomar el proximo tiempo como el primero
-        self.data_frame = pd.DataFrame(columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref']) # creamos un nuevo data_frame vacio
+        self.data_frame = pd.DataFrame(columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref', 'note']) # creamos un nuevo data_frame vacio
         self.saving = True # activamos esta condicion
     
     def pause_saving(self): # para pausar la grabacion de datos (mismo efecto que stop)

@@ -337,6 +337,8 @@ class Window(QMainWindow, PlotWindow):
         self.refresh_plots_signal.connect(self.refresh_plots) # conectamos la señal refresh_plots_signal que se emite cuando se tienen que actualizar uno o varios gráficos desde un thread distinto al principal
         self.clearPlotButton.clicked.connect(self.clear_plot) # para limpiar un grafico (borrar las mediciones obtenidas durante una ejecucion)
         self.clearPlotButton.setEnabled(False)
+        self.free_recording = False
+        self.startFreeRocordingButton.clicked.connect(self.start_free_recording)
 
         self.base_path = os.path.dirname(os.path.realpath(__file__)) # ubicacion del archivo dentro del sistema de archivos del computador
         self.filename = None # nombre con el que se guarda una partitura
@@ -380,6 +382,22 @@ class Window(QMainWindow, PlotWindow):
         self.setWindowTitle("Pierre - Flutist Robot")
         self.file_saved = True # esta variable se hace falsa cuando el archivo es modificado. Entonces se agrega un asterisco al titulo de la ventana y antes de cerrar o abrir otra partitura se pregunta al usuario si quiere guardar los cambios
     
+    def start_free_recording(self):
+        self.free_recording = not self.free_recording
+        if self.free_recording:
+            self.goToCoursorButton.setEnabled(False)
+            self.playButton.setEnabled(False)
+            self.startFreeRocordingButton.setText("Stop Recording...")
+            self.startFreeRocordingButton.setStyleSheet("background-color : red")
+            self.musician_pipe.send(["start_free_recording"])
+        else:
+            self.goToCoursorButton.setEnabled(True)
+            self.startFreeRocordingButton.setText("Start Free Record")
+            self.startFreeRocordingButton.setStyleSheet("")
+            directory = "recordings/free_recording/" + datetime.now().strftime("%Y-%m-%d at %Hh%Mm%Ss")
+            os.mkdir(directory)
+            self.musician_pipe.send(["stop_free_recording", directory+'/data.csv', directory+'/audio.wav'])
+
     def refresh_plots(self, plot_list): # se ejecuta cuando se emite la señal refresh_plots_signal, simplemente llama las 6 funciones que plotean en los graphicViews.
         if 2 in plot_list:
             self.reprint_plot_2()
@@ -506,14 +524,19 @@ class Window(QMainWindow, PlotWindow):
                         self.ps_playing_tune.set()
                         thread2 = threading.Thread(target=self.ps_play_tune)
                         thread2.start()
-                if self.ps_Btn_CROSS and not self.ps_last_Btn_CROSS: # si se apreta cross se pueden cambiar las notas de la melodia de forma manual (una a una)
+                if self.ps_Btn_CROSS and not self.ps_last_Btn_CROSS: # si se apreta cross se pueden cambiar las notas de la melodia de forma manual (una a una) hacia adelante
                     self.ps_melodia_index = (self.ps_melodia_index + 1) % len(self.ps_melodia)
+                    if len(self.ps_melodia):
+                        self.musician_pipe.send(['execute_fingers_action', dict_notes_rev[self.ps_melodia[self.ps_melodia_index]], False])
+                if self.ps_Btn_SQUARE and not self.ps_last_Btn_SQUARE: # si se apreta cross se pueden cambiar las notas de la melodia de forma manual (una a una) hacia atras
+                    self.ps_melodia_index = (self.ps_melodia_index - 1) % len(self.ps_melodia)
                     if len(self.ps_melodia):
                         self.musician_pipe.send(['execute_fingers_action', dict_notes_rev[self.ps_melodia[self.ps_melodia_index]], False])
                 
                 self.ps_last_Btn_MOVE = self.ps_Btn_MOVE
                 self.ps_last_Btn_CROSS = self.ps_Btn_CROSS
                 self.ps_last_Btn_CIRCLE = self.ps_Btn_CIRCLE
+                self.ps_last_Btn_SQUARE = self.ps_Btn_SQUARE
             elif palabras[0] == "state2":
                 if palabras[1] == self.ps_serial1: # si la informacion que entrega es del control que representa la boca
                     self.ps_tracked1 = palabras[2] == "1" # si el control se encuentra en la imagen, este valor es 1 y se informa su posicion
@@ -530,7 +553,7 @@ class Window(QMainWindow, PlotWindow):
                         self.ps_r2 = float(palabras[5])
             if self.ps_tracked1 and self.ps_tracked2 and self.ps_playing: # si ambos controles estan siendo trackeados y se tiene activado ps_playing, entonces se mueve el robot conforme a lo que se pide
                 flow = self.ps_trigger_v*50 # el flujo se indica con el trigger (más presionado es más flujo)
-                if self.ps_Btn_SQUARE: # si el usuario apreta cuadrado se agrega un vibrato. Sin embargo no es posible modificar su amplitud ni su frecuencia
+                if self.ps_Btn_TRIANGLE: # si el usuario apreta cuadrado se agrega un vibrato. Sin embargo no es posible modificar su amplitud ni su frecuencia
                     flow += flow*0.1*np.sin(2*np.pi*5*time())
                 ## a partir de  x, z, self.ps_accel_y, xf y zf, las posiciones de los comandos de ps move que representan la boca del robot y el bisel de la flauta (entregadas como pixeles en la imagen), se escalan los valores para dirigir el movimiento del robot
                 alpha = -self.ps_accel_y*45
@@ -695,6 +718,7 @@ class Window(QMainWindow, PlotWindow):
     def play(self): # funcion que se ejecuta al presionar el boton de play. Comienza la ejecucion de la partitura pre-cargada
         self.playing.set() 
         self.clearPlotButton.setEnabled(False)
+        self.startFreeRocordingButton.setEnabled(False)
         rec = self.recordCheckBox.isChecked() # si se selecciono la opcion de grabar
         self.musician_pipe.send(["start_loaded_script", rec]) # ordena al musico a empezar a tocar las rutas pre-cargadas
         coursor = threading.Thread(target=self.move_coursor_and_plot, args=()) # crea un thread que se encarga del movimiento del cursor a lo largo de la partitura y de plotear el valor medido en cada eje
@@ -764,6 +788,7 @@ class Window(QMainWindow, PlotWindow):
         self.recordCheckBox.setEnabled(True) # lo mismo la casilla de record
         self.stopButton.setEnabled(False) # se desactiva el stop (ya se ejecutó)
         self.clearPlotButton.setEnabled(True) # se activa el clear plot, porque hay graficos nuevos
+        self.startFreeRocordingButton.setEnabled(True)
 
     def save_recorded_data(self): # abre un dialogo para ponerle nombre a los archivos donde se guardará la informacion y se los envia al musico.
         fname, _ = QFileDialog.getSaveFileName(self, 'Open file', self.base_path,"CSV files (*.csv)") # nombre del archivo csv con la tabla de las mediciones tomadas
