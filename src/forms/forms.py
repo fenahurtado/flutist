@@ -17,6 +17,9 @@ from src.forms.scale_time import Ui_Dialog as ScaleTimeFormDialog
 from src.forms.settings import Ui_Dialog as SettingsFormDialog
 from src.forms.trill import Ui_Dialog as TrillFormDialog
 from src.forms.states_from_notes import Ui_Dialog as StatesFromNotesDialog
+from src.forms.surfacePointForm import Ui_Dialog as SurfacePointDialog
+from src.forms.tonguePointForm import Ui_Dialog as TonguePointDialog
+from src.forms.DynamicPintForm import Ui_Dialog as DynamicPointDialog
 from src.route import dict_notes, dict_notes_rev
 from functools import partial
 from src.cinematica import *
@@ -256,6 +259,87 @@ class PointForm(QDialog, PointFormDialog):
         
         self.value.setMaximum(max_v)
         self.value.setMinimum(min_v)
+        self.value.setValue(data[1])
+
+        # conectamos los cambios en los campos con update_data
+        self.time.valueChanged.connect(partial(self.update_data, 'time'))
+        self.value.valueChanged.connect(partial(self.update_data, 'value'))
+
+    def update_data(self, tag, value):
+        # actualiza self.data con los valores ingresados por el usuario
+        if tag == 'time':
+            self.data[0] = value
+        elif tag == 'value':
+            self.data[1] = value
+
+class DynamicForm(QDialog, DynamicPointDialog):
+    def __init__(self, parent=None, dynamic_list=[], data=[0,0], max_t=100, min_v=0, max_v=100):
+        super().__init__(parent) #super(Form, self).__init__(parent)
+        self.setupUi(self)
+        self.parent = parent
+        self.data = data
+
+        # ponemos valores iniciales y fijamos limites
+        self.timeInput.setValue(data[0])
+        self.timeInput.setMaximum(max_t)
+        
+        self.dynamicInput.addItems(dynamic_list)
+        self.dynamicInput.setCurrentIndex(data[1])
+
+        # conectamos los cambios en los campos con update_data
+        self.timeInput.valueChanged.connect(partial(self.update_data, 'time'))
+        self.dynamicInput.currentIndexChanged.connect(partial(self.update_data, 'value'))
+
+    def update_data(self, tag, value):
+        # actualiza self.data con los valores ingresados por el usuario
+        if tag == 'time':
+            self.data[0] = value
+        elif tag == 'value':
+            self.data[1] = value
+
+class SurfacePointForm(QDialog, SurfacePointDialog):
+    """
+    Formulario para crear o editar un punto que se añadirá a una de las curvas para la trayectoria de la superficie de los labios.
+    Debe ajustarse tiempo y valor
+    """
+    def __init__(self, parent=None, data=[0,0], max_t=100):
+        super().__init__(parent) #super(Form, self).__init__(parent)
+        self.setupUi(self)
+        self.parent = parent
+        self.data = data
+
+        # ponemos valores iniciales y fijamos limites
+        self.time.setValue(data[0])
+        self.time.setMaximum(max_t)
+        
+        self.value.setValue(data[1])
+
+        # conectamos los cambios en los campos con update_data
+        self.time.valueChanged.connect(partial(self.update_data, 'time'))
+        self.value.valueChanged.connect(partial(self.update_data, 'value'))
+
+    def update_data(self, tag, value):
+        # actualiza self.data con los valores ingresados por el usuario
+        if tag == 'time':
+            self.data[0] = value
+        elif tag == 'value':
+            self.data[1] = value
+    
+class TonguePointForm(QDialog, TonguePointDialog):
+    """
+    Formulario para crear o editar un punto que se añadirá a una de las curvas para la trayectoria de la superficie de la lengua.
+    Debe ajustarse tiempo y valor
+    """
+    def __init__(self, parent=None, data=[0,0], max_t=100):
+        super().__init__(parent) #super(Form, self).__init__(parent)
+        self.setupUi(self)
+        self.parent = parent
+        self.data = data
+
+        # ponemos valores iniciales y fijamos limites
+        self.time.setValue(data[0])
+        self.time.setMaximum(max_t)
+        
         self.value.setValue(data[1])
 
         # conectamos los cambios en los campos con update_data
@@ -657,6 +741,12 @@ class FuncTableForm(QDialog, FuncTableDialog):
         if data[0] == 4: # si se elige la quinta curva, la de las notas
             self.property_choice.clear() # en la curva de las notas, la unica propiedad que tienen son las notas (falta implementar agregar los trills TODO)
             self.property_choice.addItems(['notes'])
+        if data[0] == 5: # si se elige la quinta curva, la de las aperturas de los labios
+            self.property_choice.clear() 
+            self.property_choice.addItems(['points'])
+        if data[0] == 6: # si se elige la quinta curva, la de la lengua
+            self.property_choice.clear() 
+            self.property_choice.addItems(['points'])
         self.property_choice.setCurrentIndex(data[1]) 
 
         # conectamos los cambios en los menus
@@ -676,7 +766,7 @@ class FuncTableForm(QDialog, FuncTableDialog):
         Permite añadir un elemento (punto, vibrato, filtro o nota) a alguna de las curvas elegidas.
         Abre un formulario para llenar con los parametros necesarios y si la informacion es correcta agrega el elemento a la curva seleccionada
         """
-        if self.data[0] != 4: # mientras no se haya elegido la quinta curva, la de las notas, se puede agregar puntos, vibratos o filtros
+        if self.data[0] in [0,1,2,3]: # mientras no se haya elegido la quinta curva, la de las notas, se puede agregar puntos, vibratos o filtros
             if self.data[1] == 0: # punto
                 data = [0, 0] # partimos con un punto en 0, 0
                 # fijamos los limites de acuerdo a la curva
@@ -729,6 +819,19 @@ class FuncTableForm(QDialog, FuncTableDialog):
                             break
                     else:
                         break
+        elif self.data[0] in [5,6]:
+            if self.data[0] == 5:
+                data = [0, 31] # partimos con un punto en 0, 0
+                dlg = SurfacePointForm(parent=self, data=data, max_t=self.data[2]['total_t']) # creamos el formulario 
+            else:
+                data = [0, 0] # partimos con un punto en 0, 0
+                dlg = TonguePointForm(parent=self, data=data, max_t=self.data[2]['total_t']) # creamos el formulario 
+            dlg.setWindowTitle("Add Point")
+            if dlg.exec(): # si resulta exitoso agregamos el punto
+                new_x = data[0]
+                new_y = data[1]
+                self.parent.add_item(self.data[0], self.data[1], [new_x, new_y]) # le pedimos al parent (que es Window) que agregue el elemento
+                self.poblate() # volvemos a poblar las tablas
         else: # si se selecciono la curva de las notas, solo se pueden agregar notas. Todavia no se implementa los trills TODO
             data = [self.last_note_t+0.1, self.last_note]
             dlg = NoteForm(parent=self, data=data, max_t=self.data[2]['total_t'])  # creamos el formulario
@@ -749,7 +852,7 @@ class FuncTableForm(QDialog, FuncTableDialog):
         if self.item_selected == None: # este parametro cambia cuando se hace click sobre un elemento. Si no hay ningun elemento seleccionado, el boton edit no hace nada
             pass
         else:
-            if self.data[0] != 4: # mientras no se haya seleccionado la quinta curva (la de las notas)
+            if self.data[0] in [0,1,2,3]: # mientras no se haya seleccionado la quinta curva (la de las notas)
                 route=self.data[self.data[0] + 2] # en self.data se tienen las rutas de las 5 curvas, en orden y partiendo en 2
                 if self.data[1] == 0: # si se quiere editar un punto
                     data = route['points'][self.item_selected] # usamos la data de ese punto para prellenar el formulario
@@ -816,6 +919,19 @@ class FuncTableForm(QDialog, FuncTableDialog):
                                 break
                         else:
                             break
+            elif self.data[0] in [5,6]:
+                route=self.data[self.data[0] + 2]
+                data = route['points'][self.item_selected]
+                if self.data[0] == 5:
+                    dlg = SurfacePointForm(parent=self, data=data, max_t=self.data[2]['total_t']) # creamos el formulario 
+                else:
+                    dlg = TonguePointForm(parent=self, data=data, max_t=self.data[2]['total_t']) # creamos el formulario 
+                dlg.setWindowTitle("Edit Point")
+                if dlg.exec(): # si resulta exitoso agregamos el punto
+                    new_x = data[0]
+                    new_y = data[1]
+                    self.parent.edit_item(self.data[0], self.data[1], self.item_selected, [new_x, new_y]) # le pedimos a la ventana principal que edite el elemento y actualice los graficos
+                    self.poblate() # actualizamos la tabla
             else: # si nos encontramos en la quinta curva (la de las notas), solo podemos editar las notas
                 data = self.data[6]['notes'][self.item_selected] # usamos la data de esa nota para prellenar el formulario.
                 data[1] = int(round(dict_notes_rev[data[1]]*2, 0)) # traducimos de nota a indice
@@ -847,6 +963,10 @@ class FuncTableForm(QDialog, FuncTableDialog):
             self.data[1] = 0
             self.property_choice.clear()
             self.property_choice.addItems(['notes'])
+        elif new_val == 5 or new_val == 6:
+            self.data[1] = 0
+            self.property_choice.clear()
+            self.property_choice.addItems(['points'])
         else: # las otras cuatro curvas tienen puntos, vibratos y filtros
             self.property_choice.clear()
             self.property_choice.addItems(['points', 'vibratos', 'filters'])
@@ -866,7 +986,7 @@ class FuncTableForm(QDialog, FuncTableDialog):
         """
         self.listWidget.clear() # borra la lista 
         self.route = self.data[self.data[0]+2] # obtiene la ruta de la que sacar los datos
-        if self.data[0] != 4: # si no es la curva de las notas
+        if self.data[0] in [0,1,2,3]: # si no es la curva de las notas
             if self.data[1] == 0: # queremos mostrar lo puntos de la curva seleccionada
                 for dot in self.route['points']:
                     self.listWidget.addItem(f"t: {dot[0]}, y: {dot[1]}") # mostramos el valor del punto y su tiempo
@@ -876,6 +996,9 @@ class FuncTableForm(QDialog, FuncTableDialog):
             if self.data[1] == 2: # queremos mostrar lo filtros de la curva seleccionada
                 for fil in self.route['filters']:
                     self.listWidget.addItem(f"ti: {fil[0]}, tf: {fil[1]}, fil: {fil[2]}, params: {fil[3]}") # mostramos el tiempo de inicio, el de fin, el tipo de filtro y sus parametros
+        elif self.data[0] in [5,6]: # si no es la curva de las notas
+            for dot in self.route['points']:
+                self.listWidget.addItem(f"t: {dot[0]}, y: {dot[1]}") # mostramos el valor del punto y su tiempo
         else: # en este caso mostramos las notas (porque no tenemos otra propiedad)
             for n in self.route['notes']:
                 self.listWidget.addItem(f"{n[0]} s -> {n[1]}") # agregamos nota por nota, mostrando que nota es y el tiempo en el que inicia

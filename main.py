@@ -24,9 +24,9 @@ if __name__ == '__main__':
     data = mgr.dict() # para compartir memoria entre los procesos
 
     t0 = time()
-    connect = False
+    connect = True
     ## Creamos el objeto Musico, que conecta a todos los dispositivos
-    pierre = Musician(host, connections, event, pierre_pipe, data, fingers_connect=connect, x_connect=connect, z_connect=connect, alpha_connect=connect, flow_connect=connect, pressure_sensor_connect=connect, mic_connect=True, home=False)
+    pierre = Musician(host, connections, event, pierre_pipe, data, fingers_connect=connect, x_connect=connect, z_connect=connect, alpha_connect=connect, flow_connect=connect, pressure_sensor_connect=connect, mic_connect=True, home=True)
     pierre.start()
 
     ## Antes de abrir la ventana principal esperamos que se hayan inicializado todos los procesos asi como objetos compartidos entre ellos

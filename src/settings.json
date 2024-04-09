@@ -4,7 +4,7 @@
         "deceleration": 100,
         "kd": 0.0001,
         "kd_vel": 0.0,
-        "ki": 0.1,
+        "ki": 1.1,
         "ki_vel": 0.0,
         "kp": 0.0,
         "kp_vel": 0.005,
@@ -60,24 +60,24 @@
         "dv": 0
     },
     "x_control": {
-        "acceleration": 500,
-        "deceleration": 1000,
+        "acceleration": 750,
+        "deceleration": 750,
         "kd": 0.0,
         "kd_vel": 0.0,
-        "ki": 0.1,
+        "ki": 0.3,
         "ki_vel": 0.0,
         "kp": 0.0,
         "kp_vel": 0.0,
         "proportional_coef": 2
     },
     "z_control": {
-        "acceleration": 500,
-        "deceleration": 1000,
+        "acceleration": 750,
+        "deceleration": 750,
         "kd": 0.0,
         "kd_vel": 0.0,
-        "ki": 0.0,
+        "ki": 0.3,
         "ki_vel": 0.0,
-        "kp": 0.2,
+        "kp": 0.0,
         "kp_vel": 0.0,
         "proportional_coef": 2
     }

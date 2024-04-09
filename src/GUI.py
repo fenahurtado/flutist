@@ -19,10 +19,11 @@ from src.views.start_up_screen import Ui_Form as StartWindow
 from src.route import *
 from src.cinematica import *
 from src.manual_move_win import *
+from src.interactive_plot import InteractivePlotWidget
 
 from src.plots.plot_window import LivePlotWindow, PassivePlotWindow
 
-from src.forms.forms import PointForm, VibratoForm, windows_vibrato, FilterForm, filter_windows, filter_choices, FuncTableForm, NoteForm, DurationForm, CorrectionForm, ScaleTimeForm, SettingsForm, TrillForm, StatesFromNotesForm
+from src.forms.forms import PointForm, VibratoForm, windows_vibrato, FilterForm, filter_windows, filter_choices, FuncTableForm, NoteForm, DurationForm, CorrectionForm, ScaleTimeForm, SettingsForm, TrillForm, StatesFromNotesForm, SurfacePointForm, TonguePointForm
 
 
 class StartUpWindow(QSplashScreen, StartWindow):
@@ -101,6 +102,8 @@ class Window(QMainWindow, PlotWindow):
         self.route3 = [] # datos para el grafico 3: offset
         self.route4 = [] # datos para el grafico 4: flow
         self.route5 = [] # datos para el grafico 5: notas
+        self.route6 = [] # datos para el grafico 6: lips surface
+        self.route7 = [] # datos para el grafico 7: tongue
 
         self.running = running # evento que conecta todos los procesos. Se cierra al cerrar la aplicacion
         self.musician_pipe = musician_pipe # pipe que conecta con el musico. Se usa para enviarle todas las instrucciones que se comandan a traves de esta interfaz gráfica
@@ -114,6 +117,10 @@ class Window(QMainWindow, PlotWindow):
         self.graphicsView_3.setBackground('w')
         self.graphicsView_4.setBackground('w')
         self.graphicsView_5.setBackground('w')
+        self.graphicsView_6.setBackground('w')
+        self.graphicsView_7.setBackground('w')
+        self.graphicsView_8 = InteractivePlotWidget(self.app, self)
+        self.verticalLayout.addWidget(self.graphicsView_8)
 
         ## se crean lineas verticales para representar el tiempo actual. Lo llamo cursor en adelante, al moverlo se indica la parte de la partitura en donde se quiere empezar a tocar y cuando se ejecuta una cancion el cursor va avanzando en la partitura. Puede moverse con un slider que se encuentra abajo de los 5 graphicsView
         self.rule = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('m', width=2), label='t')
@@ -121,11 +128,15 @@ class Window(QMainWindow, PlotWindow):
         self.rule3 = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('m', width=2), label='t')
         self.rule4 = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('m', width=2), label='t')
         self.rule5 = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('m', width=2), label='t')
+        self.rule6 = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('m', width=2), label='t')
+        self.rule7 = pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen('m', width=2), label='t')
         self.graphicsView.addItem(self.rule)
         self.graphicsView_2.addItem(self.rule2)
         self.graphicsView_3.addItem(self.rule3)
         self.graphicsView_4.addItem(self.rule4)
         self.graphicsView_5.addItem(self.rule5)
+        self.graphicsView_6.addItem(self.rule6)
+        self.graphicsView_7.addItem(self.rule7)
         
         ## 1: jet-lenght
         self.func1 = pg.PlotCurveItem(pen=pg.mkPen('b', width=2)) # creamos la curva que representa la referencia para l
@@ -237,6 +248,32 @@ class Window(QMainWindow, PlotWindow):
         self.vibscatter5.sigClicked.connect(self.onVibratoClicked5)
         self.graphicsView_5.addItem(self.vibscatter5)
 
+        ## 6: lips surface
+        ## el grafico de la apertura de los labios no tiene vibrato ni filtros
+        self.func6 = pg.PlotCurveItem(pen=pg.mkPen('b', width=2))
+        self.func6.setClickable(10)
+        self.func6.sigClicked.connect(self.onCurveClicked6)
+        self.graphicsView_6.addItem(self.func6)
+        self.graphicsView_6.setLabel('left', "Lips Aperture", units='n')
+        #self.graphicsView_6.getAxis('left').setTicks([i for i in range(32)])
+        
+        self.scatter6 = pg.ScatterPlotItem(size=8, brush=pg.mkBrush(30, 255, 35, 255))
+        self.scatter6.sigClicked.connect(self.onPointsClicked6)
+        self.graphicsView_6.addItem(self.scatter6)
+
+        ## 7: tongue
+        ## el grafico de la lengua no tiene vibrato ni filtros
+        self.func7 = pg.PlotCurveItem(pen=pg.mkPen('b', width=2))
+        self.func7.setClickable(10)
+        self.func7.sigClicked.connect(self.onCurveClicked7)
+        self.graphicsView_7.addItem(self.func7)
+        self.graphicsView_7.setLabel('left', "Tongue", units='n')
+        #self.graphicsView_7.getAxis('left').setTicks([i for i in range(4)])
+        
+        self.scatter7 = pg.ScatterPlotItem(size=8, brush=pg.mkBrush(30, 255, 35, 255))
+        self.scatter7.sigClicked.connect(self.onPointsClicked7)
+        self.graphicsView_7.addItem(self.scatter7)
+
 
         ## creamos los arreglos donde se almacenará la informacion de los graficos de las mediciones reales de cada eje
         self.r_plot = np.array([])
@@ -250,7 +287,11 @@ class Window(QMainWindow, PlotWindow):
         self.graphicsView.setXLink(self.graphicsView_2)
         self.graphicsView_2.setXLink(self.graphicsView_3)
         self.graphicsView_3.setXLink(self.graphicsView_4)
-        self.graphicsView_4.setXLink(self.graphicsView_5)
+        self.graphicsView_4.setXLink(self.graphicsView_8.graphicsView)
+        self.graphicsView_8.graphicsView.setXLink(self.graphicsView_6)
+        self.graphicsView_6.setXLink(self.graphicsView_7)
+        self.graphicsView_7.setXLink(self.graphicsView_5)
+        
 
         ## Conectamos los checkboxes a sus funciones. Si se aprieta alguno se esconde o muestra uno de los gráficos
         self.checkBox.stateChanged.connect(self.checkBox_clicked)
@@ -258,7 +299,12 @@ class Window(QMainWindow, PlotWindow):
         self.checkBox_3.stateChanged.connect(self.checkBox3_clicked)
         self.checkBox_4.stateChanged.connect(self.checkBox4_clicked)
         self.checkBox_5.stateChanged.connect(self.checkBox5_clicked)
-
+        self.checkBox_6.stateChanged.connect(self.checkBox6_clicked)
+        self.checkBox_7.stateChanged.connect(self.checkBox7_clicked)
+        self.checkBox_8.stateChanged.connect(self.checkBox8_clicked)
+        self.graphicsView_6.hide()
+        self.graphicsView_7.hide()
+        self.graphicsView_8.hide()
         
         ## Creamos todos los menus desplegables (que se muestran al hacer click en algun lugar)
         self.pointMenu = QMenu(self) # este se mostrara al hacer click en algun punto de las trayectorias (los puntos verdes)
@@ -282,17 +328,20 @@ class Window(QMainWindow, PlotWindow):
         self.addNote = self.noteMenu.addAction("Add note")
         self.addTrill = self.noteMenu.addAction("Add trill")
         self.openNotesTable = self.noteMenu.addAction("Open as table")
+        self.tongueSurfaceMenu = QMenu(self) # este es parecido al self.graphMenu, pero para el quinto grafico (el de las notas)
+        self.tongueSurfaceMenuPoint = self.tongueSurfaceMenu.addAction("Add point")
+        self.tongueSurfaceMenuTable = self.tongueSurfaceMenu.addAction("Open as table")
 
         # estas listas se usan para indicar si se esta moviendo actualmente un punto en cada uno de los gráficos. Se usan como condicion para decidir hacer algo cuando se esta moviendo el mouse por encima de un gráfico
-        self.moving_point = [False for i in range(5)]
-        self.moving_vibrato = [False for i in range(5)]
-        self.moving_filter = [False for i in range(5)]
-        self.segundo_click = [False for i in range(5)] # se usa para soltar los puntos
+        self.moving_point = [False for i in range(7)]
+        self.moving_vibrato = [False for i in range(7)]
+        self.moving_filter = [False for i in range(7)]
+        self.segundo_click = [False for i in range(7)] # se usa para soltar los puntos
 
         # en caso de que se esté moviendo un punto (listas anteriores) estas listas indican qué punto es
-        self.moving_point_index = [0 for i in range(5)]
-        self.moving_vibrato_index = [0 for i in range(5)]
-        self.moving_filter_index = [0 for i in range(5)]
+        self.moving_point_index = [0 for i in range(7)]
+        self.moving_vibrato_index = [0 for i in range(7)]
+        self.moving_filter_index = [0 for i in range(7)]
 
         self.graphicsView.scene().sigMouseClicked.connect(self.mouse_clicked) # cuando se hace click en alguna parte del graphicsView que no sea sobre un punto o una curva
         self.graphicsView.scene().sigMouseMoved.connect(self.mouse_moved) # cuando se mueve por encima del graphicsView
@@ -308,6 +357,12 @@ class Window(QMainWindow, PlotWindow):
 
         self.graphicsView_5.scene().sigMouseClicked.connect(self.mouse_clicked5)
         self.graphicsView_5.scene().sigMouseMoved.connect(self.mouse_moved5)
+
+        self.graphicsView_6.scene().sigMouseClicked.connect(self.mouse_clicked6)
+        self.graphicsView_6.scene().sigMouseMoved.connect(self.mouse_moved6)
+
+        self.graphicsView_7.scene().sigMouseClicked.connect(self.mouse_clicked7)
+        self.graphicsView_7.scene().sigMouseMoved.connect(self.mouse_moved7)
 
         ## conectamos los botones a sus funciones
         self.statesFromNotesButton.clicked.connect(self.get_states_from_notes) # boton para crear trayectorias en cada uno de los cuatro primeros ejes a partir de las notas.
@@ -373,11 +428,11 @@ class Window(QMainWindow, PlotWindow):
         self.actionSettings.triggered.connect(self.change_settings) # esto abre un formulario con todos los ajustes posibles
 
         self.populate_graph() # creamos una version inicial de las trayectorias
-        r = self.get_copy_of_routes(self.route, self.route2, self.route3, self.route4, self.route5) # creamos una copia del estado actual de las rutas para cada eje y la almacenamos en la lista de los estados para hacer undo.
+        r = self.get_copy_of_routes(self.route, self.route2, self.route3, self.route4, self.route5, self.route6, self.route7, self.graphicsView_8.route) # creamos una copia del estado actual de las rutas para cada eje y la almacenamos en la lista de los estados para hacer undo.
         self.undo_list.append(r)
         
         # Actualizamos los gráficos los graficos
-        self.refresh_plots_signal.emit([1,2,3,4,5])
+        self.refresh_plots_signal.emit([1,2,3,4,5,6,7])
 
         self.setWindowTitle("Pierre - Flutist Robot")
         self.file_saved = True # esta variable se hace falsa cuando el archivo es modificado. Entonces se agrega un asterisco al titulo de la ventana y antes de cerrar o abrir otra partitura se pregunta al usuario si quiere guardar los cambios
@@ -407,18 +462,25 @@ class Window(QMainWindow, PlotWindow):
             self.reprint_plot_4()
         if 5 in plot_list:
             self.reprint_plot_5()
+        if 6 in plot_list:
+            self.reprint_plot_6()
+        if 7 in plot_list:
+            self.reprint_plot_7()
         if 1 in plot_list:
             self.reprint_plot_1()
         if 'r' in plot_list:
             self.reprint_real_func() # esta plotea las curvas de las mediciones reales
 
-    def get_copy_of_routes(self, r1, r2, r3, r4, r5): # entrega copias de los diccionarios para almacenar versiones de los estados. Se hacen copias para que no se alteren cuando se realizan cambios y se pueda volver atras
+    def get_copy_of_routes(self, r1, r2, r3, r4, r5, r6, r7, r8): # entrega copias de los diccionarios para almacenar versiones de los estados. Se hacen copias para que no se alteren cuando se realizan cambios y se pueda volver atras
         r1_copy = {'total_t': r1['total_t'], 'Fs': r1['Fs'], 'points': r1['points'].copy(), 'filters': r1['filters'].copy(), 'vibrato': r1['vibrato'].copy(), 'history': r1['history'].copy()}
         r2_copy = {'total_t': r2['total_t'], 'Fs': r2['Fs'], 'points': r2['points'].copy(), 'filters': r2['filters'].copy(), 'vibrato': r2['vibrato'].copy(), 'history': r2['history'].copy()}
         r3_copy = {'total_t': r3['total_t'], 'Fs': r3['Fs'], 'points': r3['points'].copy(), 'filters': r3['filters'].copy(), 'vibrato': r3['vibrato'].copy(), 'history': r3['history'].copy()}
         r4_copy = {'total_t': r4['total_t'], 'Fs': r4['Fs'], 'points': r4['points'].copy(), 'filters': r4['filters'].copy(), 'vibrato': r4['vibrato'].copy(), 'history': r4['history'].copy()}
         r5_copy = {'total_t': r5['total_t'], 'Fs': r5['Fs'], 'notes': r5['notes'].copy(), 'trill': r5['trill'].copy(), 'history': r5['history'].copy()}
-        return [r1_copy, r2_copy, r3_copy, r4_copy, r5_copy]
+        r6_copy = {'total_t': r6['total_t'], 'Fs': r6['Fs'], 'points': r6['points'].copy(), 'history': r6['history'].copy()}
+        r7_copy = {'total_t': r7['total_t'], 'Fs': r7['Fs'], 'points': r7['points'].copy(), 'history': r7['history'].copy()}
+        r8_copy = {'total_t': r8['total_t'], 'Fs': r8['Fs'], 'points': r8['points'].copy(), 'filters': r8['filters'].copy(), 'vibrato': r8['vibrato'].copy(), 'history': r8['history'].copy()}
+        return [r1_copy, r2_copy, r3_copy, r4_copy, r5_copy, r6_copy, r7_copy, r8_copy]
 
     def ps_control(self): # se ejecuta al presionar el boton de PS Control, e inicia un thread.
         self.process_running.set()
@@ -468,6 +530,13 @@ class Window(QMainWindow, PlotWindow):
         self.ps_last_Btn_MOVE = False # se usa para detectar cambios de estado del Btn_MOVE
         self.ps_last_Btn_CROSS = False # se usa para detectar cambios de estado del Btn_CROSS
         self.ps_last_Btn_CIRCLE = False # se usa para detectar cambios de estado del Btn_CIRCLE
+
+        self.ps_last_Btn_CROSS2 = False
+        self.ps_last_Btn_CIRCLE2 = False
+        self.ps_last_Btn_SQUARE2 = False
+        self.ps_last_Btn_TRIANGLE2 = False
+        self.ps_last_Btn_MOVE2 = False
+        self.ps_last_trigger_v2 = 0
         self.ps_melodia = [] # lista donde se agregan todas las notas que estan escritas en la partitura al momento de ejecutar el script del control del robot mediante ps move. El usuario despues puede avanzar nota por nota apretando el boton Btn_CROSS o activar un thread que las empieza a pasar de forma automatica apretando el boton Btn_CIRCLE
         for note in self.route5["notes"]:
             self.ps_melodia.append(note[1])
@@ -515,6 +584,21 @@ class Window(QMainWindow, PlotWindow):
                 self.ps_Btn_MOVE = botones & 1 << 19 != 0
                 self.ps_Btn_T = botones & 1 << 20 != 0
 
+                botones2 = int(palabras[13], 16)
+                self.ps_Btn_TRIANGLE2 = botones2 & 1 << 4 != 0
+                self.ps_Btn_CIRCLE2 = botones2 & 1 << 5 != 0
+                self.ps_Btn_CROSS2 = botones2 & 1 << 6 != 0
+                self.ps_Btn_SQUARE2 = botones2 & 1 << 7 != 0
+
+                self.ps_Btn_SELECT2 = botones2 & 1 << 8 != 0
+                self.ps_Btn_START2 = botones2 & 1 << 11 != 0
+
+                self.ps_Btn_PS2 = botones2 & 1 << 16 != 0
+                self.ps_Btn_MOVE2 = botones2 & 1 << 19 != 0
+                self.ps_Btn_T2 = botones2 & 1 << 20 != 0
+
+                self.ps_trigger_v2 = int(round(int(palabras[14]) / 255 * 31, 0))
+
                 if self.ps_Btn_MOVE and not self.ps_last_Btn_MOVE: # si se apreta el boton move cambia el estado del control del robot (empieza a seguir lo que se le pide de acuerdo al movimiento del control o deja de seguirlo)
                     self.ps_playing = not self.ps_playing
                 if self.ps_Btn_CIRCLE and not self.ps_last_Btn_CIRCLE: # si se apreta el boton circulo se comienza o se deja de tocar en forma automatica las notas de la melodia
@@ -533,10 +617,15 @@ class Window(QMainWindow, PlotWindow):
                     if len(self.ps_melodia):
                         self.musician_pipe.send(['execute_fingers_action', dict_notes_rev[self.ps_melodia[self.ps_melodia_index]], False])
                 
+                
+
                 self.ps_last_Btn_MOVE = self.ps_Btn_MOVE
                 self.ps_last_Btn_CROSS = self.ps_Btn_CROSS
                 self.ps_last_Btn_CIRCLE = self.ps_Btn_CIRCLE
                 self.ps_last_Btn_SQUARE = self.ps_Btn_SQUARE
+
+                
+
             elif palabras[0] == "state2":
                 if palabras[1] == self.ps_serial1: # si la informacion que entrega es del control que representa la boca
                     self.ps_tracked1 = palabras[2] == "1" # si el control se encuentra en la imagen, este valor es 1 y se informa su posicion
@@ -551,7 +640,27 @@ class Window(QMainWindow, PlotWindow):
                         self.ps_x2 = float(palabras[3])
                         self.ps_y2 = float(palabras[4])
                         self.ps_r2 = float(palabras[5])
+            elif palabras[0] == "state3":
+                pass
             if self.ps_tracked1 and self.ps_tracked2 and self.ps_playing: # si ambos controles estan siendo trackeados y se tiene activado ps_playing, entonces se mueve el robot conforme a lo que se pide
+                if self.ps_last_trigger_v2 != self.ps_trigger_v2:
+                    self.musician_pipe.send(['execute_lips_surface_action', 31 - self.ps_trigger_v2])
+                if self.ps_Btn_CROSS2 and not self.ps_last_Btn_CROSS2:
+                    self.musician_pipe.send(['execute_tongue_action', 1])
+                if self.ps_Btn_SQUARE2 and not self.ps_last_Btn_SQUARE2:
+                    self.musician_pipe.send(['execute_tongue_action', 2])
+                if self.ps_Btn_MOVE2 and not self.ps_last_Btn_MOVE2:
+                    self.musician_pipe.send(['execute_tongue_action', 3])
+                if not self.ps_Btn_CROSS2 and self.ps_last_Btn_CROSS2 or not self.ps_Btn_SQUARE2 and self.ps_last_Btn_SQUARE2 or not self.ps_Btn_MOVE2 and self.ps_last_Btn_MOVE2:
+                    self.musician_pipe.send(['execute_tongue_action', 0])
+                self.ps_last_Btn_CROSS2 = self.ps_Btn_CROSS2
+                self.ps_last_Btn_CIRCLE2 = self.ps_Btn_CIRCLE2
+                self.ps_last_Btn_SQUARE2 = self.ps_Btn_SQUARE2
+                self.ps_last_Btn_TRIANGLE2 = self.ps_Btn_TRIANGLE2
+                self.ps_last_Btn_MOVE2 = self.ps_Btn_MOVE2
+
+                self.ps_last_trigger_v2 = self.ps_trigger_v2
+                    
                 flow = self.ps_trigger_v*50 # el flujo se indica con el trigger (más presionado es más flujo)
                 if self.ps_Btn_TRIANGLE: # si el usuario apreta cuadrado se agrega un vibrato. Sin embargo no es posible modificar su amplitud ni su frecuencia
                     flow += flow*0.1*np.sin(2*np.pi*5*time())
@@ -590,28 +699,36 @@ class Window(QMainWindow, PlotWindow):
     def undo(self): # vuelve al estado anterior de la partitura (antes del ultimo cambio)
         if len(self.undo_list) >= 2: # la lista self.undo_list tiene como su ultimo elemento el estado actual, por lo tanto para volver atras tiene que haber al menos 2 elementos en la lista
             self.redo_list.append(self.undo_list.pop()) # sacamos de la lista de undo el estado actual y lo agregamos a la lista de redo
-            r = self.get_copy_of_routes(self.undo_list[-1][0], self.undo_list[-1][1], self.undo_list[-1][2], self.undo_list[-1][3], self.undo_list[-1][4]) # hacemos una copia del estado anterior
+            r = self.get_copy_of_routes(self.undo_list[-1][0], self.undo_list[-1][1], self.undo_list[-1][2], self.undo_list[-1][3], self.undo_list[-1][4], self.undo_list[-1][5], self.undo_list[-1][6], self.undo_list[-1][7]) # hacemos una copia del estado anterior
             # y asignamos este estado como el estado actual
             self.route = r[0]
             self.route2 = r[1]
             self.route3 = r[2]
             self.route4 = r[3]
             self.route5 = r[4]
-            self.refresh_plots_signal.emit([1,2,3,4,5]) # se actualizan los graficos
+            self.route6 = r[5]
+            self.route7 = r[6]
+            self.graphicsView_8.route = r[7]
+            self.refresh_plots_signal.emit([1,2,3,4,5,6,7]) # se actualizan los graficos
+            self.graphicsView_8.refresh()
             self.changes_made(from_hist=True) # y se informa que hubo cambios
 
     def redo(self): # vuelve al estado antes del undo
         if len(self.redo_list) >= 1: # a diferencia de la lista del undo, redo_list no contiene el estado actual
             to = self.redo_list.pop() # sacamos el ultimo elemento de la lista
             self.undo_list.append(to) # y lo agregamos a la lista del undo. Este será el estado nuevo
-            r = self.get_copy_of_routes(to[0], to[1], to[2], to[3], to[4]) # creamos una copia
+            r = self.get_copy_of_routes(to[0], to[1], to[2], to[3], to[4], to[5], to[6], to[7]) # creamos una copia
             # y lo asignamos como el estado actual
             self.route = r[0] 
             self.route2 = r[1]
             self.route3 = r[2]
             self.route4 = r[3]
             self.route5 = r[4]
-            self.refresh_plots_signal.emit([1,2,3,4,5]) # se actualizan los graficos
+            self.route6 = r[5]
+            self.route7 = r[6]
+            self.graphicsView_8.route = r[7]
+            self.refresh_plots_signal.emit([1,2,3,4,5,6,7]) # se actualizan los graficos
+            self.graphicsView_8.refresh()
             self.changes_made(from_hist=True) # y se informa que hubo cambios
 
     def change_to_joint_space(self): # cambia el espacio de instruccion del de la tarea al de las junturas. Ahora la trayectoria que se escriba en el gráfico de mas arriba se instruye directamente al eje x, el de almedio al eje z y el de abajo al eje alpha. 
@@ -663,9 +780,13 @@ class Window(QMainWindow, PlotWindow):
         z_route = []
         alpha_route = []
         notes = []
+        aperture = []
+        tongue = []
 
         t, f_flow, p, vib, fil = calculate_route(self.route4) # calculamos la ruta para el flujo, que es independiente al espacio que se esta usando
         t, f_notes, xp, yp, tx, ty = calculate_notes_route(self.route5) # lo mismo para las notas
+        t, f_aperture, px, py = calculate_route_tongue(self.route6)
+        t, f_tongue, px, py = calculate_route_tongue(self.route7)
         ti_index = int(len(t) * self.horizontalSlider.value() / 100) # calculamos el tiempo de inicio de acuerdo a la posicion del cursor
 
         if self.space_of_instruction == 0: # si usamos el espacio de la tarea
@@ -699,8 +820,10 @@ class Window(QMainWindow, PlotWindow):
             z_route.append([t[i], z_pos_ref[i + ti_index], z_vel_ref[i + ti_index]])
             alpha_route.append([t[i], alpha_pos_ref[i + ti_index], alpha_vel_ref[i + ti_index]])
             notes.append([t[i], f_notes[i + ti_index]])
+            aperture.append([t[i], int(f_aperture[i + ti_index])])
+            tongue.append([t[i], int(f_tongue[i + ti_index])])
 
-        self.musician_pipe.send(["load_routes", x_route, z_route, alpha_route, flow_route, notes]) # pre-cargamos las rutas calculadas
+        self.musician_pipe.send(["load_routes", x_route, z_route, alpha_route, flow_route, notes, aperture, tongue]) # pre-cargamos las rutas calculadas
         self.musician_pipe.send(["move_to", desired_state, None, False, False, False, False, 50]) # nos movemos al estado inicial
         x = threading.Thread(target=self.wait_musician_is_in_place, args=(desired_state,)) # creamos un thread que revisa cuando el robot llega al estado inicial. Una vez que llega a posición es posible pedirle que empiece a tocar la partitura
         x.start()
@@ -878,10 +1001,10 @@ class Window(QMainWindow, PlotWindow):
         '''
         Se usa esta función para guardar una partitura o los cambios realizados
         '''
-        if len(self.route['history']) == 0 and len(self.route2['history']) == 0 and len(self.route3['history']) == 0 and len(self.route4['history']) == 0 and len(self.route5['history']) == 0: # si la partitura esta en blanco, no hace nada 
+        if len(self.route['history']) == 0 and len(self.route2['history']) == 0 and len(self.route3['history']) == 0 and len(self.route4['history']) == 0 and len(self.route5['history']) == 0 and len(self.graphicsView_8.route['history']) == 0: # si la partitura esta en blanco, no hace nada 
             return False
         if self.filename: # si tiene un filename significa que ya ha sido guardado antes, asique se sigue guardando con el mismo nombre. Si no lo tiene se ejecuta primero save_as para obtener un nombre de archivo
-            data = {'route_r': self.route, 'route_theta': self.route2, 'route_offset': self.route3, 'route_flow': self.route4, 'route_fingers': self.route5, 'timestamp': datetime.now().strftime("%d/%m/%Y %H:%M:%S")} # formateamos la informacion de la partitura como un diccionario (para poder guardarla como json)
+            data = {'route_r': self.route, 'route_theta': self.route2, 'route_offset': self.route3, 'route_flow': self.route4, 'route_fingers': self.route5, 'route_lips': self.route6, 'route_tongue': self.route7, 'dynamics': self.graphicsView_8.route, 'timestamp': datetime.now().strftime("%d/%m/%Y %H:%M:%S")} # formateamos la informacion de la partitura como un diccionario (para poder guardarla como json)
             with open(self.filename, 'w') as file:
                 json.dump(data, file, indent=4, sort_keys=True)
                 self.changes_saved()
@@ -915,14 +1038,14 @@ class Window(QMainWindow, PlotWindow):
         self.populate_graph() # reseteamos la informacion de cada trayectoria
         self.horizontalSlider.setValue(0) # movemos el cursor al inicio
         self.clear_plot() # limpiamos las curvas de las variables medidas
-        self.refresh_plots_signal.emit([1,2,3,4,5]) # actualizamos los graficos
+        self.refresh_plots_signal.emit([1,2,3,4,5,6,7]) # actualizamos los graficos
         self.changes_saved()
 
     def open(self, fname=None):
         '''
         Se usa esta función para abrir una partitura que había sido guardada con anterioridad. Además, si hay trabajo sin guardar se ofrece la posibilidad de guardarlo antes de abrir el nuevo.
         '''
-        if (len(self.route['history']) != 0 or len(self.route2['history']) != 0 or len(self.route3['history']) != 0 or len(self.route4['history']) != 0 or len(self.route5['history']) != 0) and not self.file_saved: # si se tiene un archivo con cambios sin guardar, antes de abrir uno nuevo se pregunta si se quiere guardar los cambios
+        if (len(self.route['history']) != 0 or len(self.route2['history']) != 0 or len(self.route3['history']) != 0 or len(self.route4['history']) != 0 or len(self.route5['history']) != 0 or len(self.graphicsView_8.route['history']) != 0) and not self.file_saved: # si se tiene un archivo con cambios sin guardar, antes de abrir uno nuevo se pregunta si se quiere guardar los cambios
             msg = QMessageBox()
             #msg.setIcon(QMessageBox.Critical)
             msg.setText("Save changes to this score before opening other file?")
@@ -955,7 +1078,11 @@ class Window(QMainWindow, PlotWindow):
                         self.route3 = data['route_offset']
                         self.route4 = data['route_flow']
                         self.route5 = data['route_fingers']
-                        self.refresh_plots_signal.emit([1,2,3,4,5]) 
+                        self.route6 = data['route_lips']
+                        self.route7 = data['route_tongue']
+                        self.graphicsView_8.route = data['dynamics']
+                        self.refresh_plots_signal.emit([1,2,3,4,5,6,7]) 
+                        self.graphicsView_8.refresh()
                         self.filename = fname
                         self.changes_saved()
                     except:
@@ -990,7 +1117,7 @@ class Window(QMainWindow, PlotWindow):
         #self.seeMotorRefsButton.setEnabled(False)
         self.file_saved = False
         if not from_hist: # si el cambio se hace mediante undo o redo no se entra a este if.
-            r = self.get_copy_of_routes(self.route, self.route2, self.route3, self.route4, self.route5) # se crea una copia del estado actual (que es distinto al anterior)
+            r = self.get_copy_of_routes(self.route, self.route2, self.route3, self.route4, self.route5, self.route6, self.route7, self.graphicsView_8.route) # se crea una copia del estado actual (que es distinto al anterior)
             self.undo_list.append(r) # se agrega a la lista de undo
             self.redo_list = [] # se limpia la lista de redo si hay algun cambio
 
@@ -1006,7 +1133,9 @@ class Window(QMainWindow, PlotWindow):
             self.route3['total_t'] = new_dur
             self.route4['total_t'] = new_dur
             self.route5['total_t'] = new_dur
-            self.refresh_plots_signal.emit([1,2,3,4,5]) # y actualizamos los graficos
+            self.route6['total_t'] = new_dur
+            self.route7['total_t'] = new_dur
+            self.refresh_plots_signal.emit([1,2,3,4,5,6,7]) # y actualizamos los graficos
 
     def add_correction(self): # abre un formulario para agregarle correcciones a toda una curva (o curvas) en el eje del tiempo o el de su valor (un offset)
         data = [0,0,0,0,0,0,0,0,0,0] # el formulario inicial no tiene desplazamiento en ningun eje
@@ -1066,8 +1195,14 @@ class Window(QMainWindow, PlotWindow):
             self.route5['total_t'] *= scale # para la ruta5 (de las notas) solo escalamos el tiempo total y las notas
             for p in self.route5['notes']: 
                 p[0] *= scale
+            self.route6['total_t'] *= scale # para la ruta5 (de las notas) solo escalamos el tiempo total y las notas
+            for p in self.route6['points']: 
+                p[0] *= scale
+            self.route7['total_t'] *= scale # para la ruta5 (de las notas) solo escalamos el tiempo total y las notas
+            for p in self.route7['points']: 
+                p[0] *= scale
             
-            self.refresh_plots_signal.emit([1,2,3,4,5]) # actualizamos los graficos
+            self.refresh_plots_signal.emit([1,2,3,4,5,6,7]) # actualizamos los graficos
 
     def see_motor_refs(self): # abre una ventana donde se plotean las trayectorias de cada motor junto con sus velocidades.
         plotwin = PassivePlotWindow(self.app, self.route, self.route2, self.route3, parent=self, space=self.space_of_instruction) # Esta ventana muestra las trayectorias de cada motor de acuerdo a la partitura que se escribio y el espacio en el que se trabaja
@@ -1086,6 +1221,7 @@ class Window(QMainWindow, PlotWindow):
             self.route2['points'] = []
             self.route3['points'] = []
             self.route4['points'] = []
+            self.route6['points'] = []
 
             # declaramos parametros para hacer las transiciones
             transition = data[0]
@@ -1098,19 +1234,26 @@ class Window(QMainWindow, PlotWindow):
             for i in range(len(self.route5['notes'])): # entonces vamos nota por nota agregando los estados definidos por el diccionario
                 t = self.route5['notes'][i][0] # tiempo de la nota
                 n = self.route5['notes'][i][1] # nota a tocar
+                try:
+                    dict_to_use = self.graphicsView_8.get_dict_for_t(t)
+                except:
+                    print("hubo error")
+                    dict_to_use = LOOK_UP_TABLE
                 if i == 0: # si es la primera nota sabemos que vamos a partir en su estado, no es necesaria una transicion
                     tf = max(0, min(t+offset, self.route['total_t'])) # tiempo final de la transicion
-                    self.add_item(0, 0, [tf, LOOK_UP_TABLE[n]['l']], from_func=True)
-                    self.add_item(1, 0, [tf, LOOK_UP_TABLE[n]['theta']], from_func=True)
-                    self.add_item(2, 0, [tf, LOOK_UP_TABLE[n]['offset']], from_func=True)
-                    self.add_item(3, 0, [tf, LOOK_UP_TABLE[n]['flow']], from_func=True)
+                    self.add_item(0, 0, [tf, dict_to_use[n]['l']], from_func=True)
+                    self.add_item(1, 0, [tf, dict_to_use[n]['theta']], from_func=True)
+                    self.add_item(2, 0, [tf, dict_to_use[n]['offset']], from_func=True)
+                    self.add_item(3, 0, [tf, dict_to_use[n]['flow']], from_func=True)
+                    self.add_item(5, 0, [tf, dict_to_use[n]['lips']], from_func=True)
                 else:
                     if t - transition < t_past: # si la nota anterior esta más proxima al tiempo que se pidio hacer la transicion, solo se agregan los puntos finales de la transicion (los de partida estaran dados por la nota anterior)
                         tf = max(0, min(t+offset, self.route['total_t'])) # tiempo final de la transicion
-                        self.add_item(0, 0, [tf, LOOK_UP_TABLE[n]['l']], from_func=True)
-                        self.add_item(1, 0, [tf, LOOK_UP_TABLE[n]['theta']], from_func=True)
-                        self.add_item(2, 0, [tf, LOOK_UP_TABLE[n]['offset']], from_func=True)
-                        self.add_item(3, 0, [tf, LOOK_UP_TABLE[n]['flow']], from_func=True)
+                        self.add_item(0, 0, [tf, dict_to_use[n]['l']], from_func=True)
+                        self.add_item(1, 0, [tf, dict_to_use[n]['theta']], from_func=True)
+                        self.add_item(2, 0, [tf, dict_to_use[n]['offset']], from_func=True)
+                        self.add_item(3, 0, [tf, dict_to_use[n]['flow']], from_func=True)
+                        self.add_item(5, 0, [tf, dict_to_use[n]['lips']], from_func=True)
                     else: # si la nota anterior está mas lejos temporalmente, se hace la transicion como se solicitó. Iniciando transition-offset segundos antes
                         ti = max(0, min(t+offset-transition, self.route['total_t'])) # tiempo inicial de la transicion
                         tf = max(0, min(t+offset, self.route['total_t'])) # tiempo final de la transicion
@@ -1118,15 +1261,16 @@ class Window(QMainWindow, PlotWindow):
                         self.add_item(1, 0, [ti, theta_past], from_func=True)
                         self.add_item(2, 0, [ti, of_past], from_func=True)
                         self.add_item(3, 0, [ti, flow_past], from_func=True)
-                        self.add_item(0, 0, [tf, LOOK_UP_TABLE[n]['l']], from_func=True)
-                        self.add_item(1, 0, [tf, LOOK_UP_TABLE[n]['theta']], from_func=True)
-                        self.add_item(2, 0, [tf, LOOK_UP_TABLE[n]['offset']], from_func=True)
-                        self.add_item(3, 0, [tf, LOOK_UP_TABLE[n]['flow']], from_func=True)
+                        self.add_item(0, 0, [tf, dict_to_use[n]['l']], from_func=True)
+                        self.add_item(1, 0, [tf, dict_to_use[n]['theta']], from_func=True)
+                        self.add_item(2, 0, [tf, dict_to_use[n]['offset']], from_func=True)
+                        self.add_item(3, 0, [tf, dict_to_use[n]['flow']], from_func=True)
+                        self.add_item(5, 0, [tf, dict_to_use[n]['lips']], from_func=True)
                 t_past = t
-                l_past = LOOK_UP_TABLE[n]['l']
-                theta_past = LOOK_UP_TABLE[n]['theta']
-                of_past = LOOK_UP_TABLE[n]['offset']
-                flow_past = LOOK_UP_TABLE[n]['flow']
+                l_past = dict_to_use[n]['l']
+                theta_past = dict_to_use[n]['theta']
+                of_past = dict_to_use[n]['offset']
+                flow_past = dict_to_use[n]['flow']
             self.changes_made() # informamos que hay cambios
 
     def move_coursor(self, value): # mueve el cursor. Esta funcion se llama cuando se mueve el slider en la ventana principal
@@ -1137,6 +1281,9 @@ class Window(QMainWindow, PlotWindow):
         self.rule3.setPos(t)
         self.rule4.setPos(t)
         self.rule5.setPos(t)
+        self.rule6.setPos(t)
+        self.rule7.setPos(t)
+        self.graphicsView_8.rule.setPos(t)
         self.playButton.setEnabled(False) # al cambiar el cursor hay que volver a apretar Move to Cursor para poder ejecutar una partitura
 
     ####
@@ -1337,7 +1484,7 @@ class Window(QMainWindow, PlotWindow):
                         break
                     
             elif action == self.openTable: # la ultima opcion permite abrir la trayectoria como una tabla con todos los elementos que la componen. En esta tabla se pueden agregar puntos, vibratos y filtros asi como tambien es posible editar o eliminar los que ya existen
-                data = [0, 0, self.route, self.route2, self.route3, self.route4, self.route5]
+                data = [0, 0, self.route, self.route2, self.route3, self.route4, self.route5, self.route6, self.route7]
                 dlg = FuncTableForm(parent=self, data=data) # creamos el formulario con todas las tablas
                 dlg.setWindowTitle("Function as table")
                 if dlg.exec():
@@ -1601,7 +1748,7 @@ class Window(QMainWindow, PlotWindow):
                         break
                     
             elif action == self.openTable:
-                data = [1, 0, self.route, self.route2, self.route3, self.route4, self.route5]
+                data = [1, 0, self.route, self.route2, self.route3, self.route4, self.route5, self.route6, self.route7]
                 dlg = FuncTableForm(parent=self, data=data)
                 dlg.setWindowTitle("Function as table")
                 if dlg.exec():
@@ -1856,7 +2003,7 @@ class Window(QMainWindow, PlotWindow):
                         break
                     
             elif action == self.openTable:
-                data = [2, 0, self.route, self.route2, self.route3, self.route4, self.route5]
+                data = [2, 0, self.route, self.route2, self.route3, self.route4, self.route5, self.route6, self.route7]
                 dlg = FuncTableForm(parent=self, data=data)
                 dlg.setWindowTitle("Function as table")
                 if dlg.exec():
@@ -2111,7 +2258,7 @@ class Window(QMainWindow, PlotWindow):
                         break
                     
             elif action == self.openTable:
-                data = [3, 0, self.route, self.route2, self.route3, self.route4, self.route5]
+                data = [3, 0, self.route, self.route2, self.route3, self.route4, self.route5, self.route6, self.route7]
                 dlg = FuncTableForm(parent=self, data=data)
                 dlg.setWindowTitle("Function as table")
                 if dlg.exec():
@@ -2241,7 +2388,7 @@ class Window(QMainWindow, PlotWindow):
                     self.changes_made()
                     self.refresh_plots_signal.emit([5])
             elif action == self.openNotesTable:
-                data = [4, 0, self.route, self.route2, self.route3, self.route4, self.route5]
+                data = [4, 0, self.route, self.route2, self.route3, self.route4, self.route5, self.route6, self.route7]
                 dlg = FuncTableForm(parent=self, data=data)
                 dlg.setWindowTitle("Function as table")
                 if dlg.exec():
@@ -2373,6 +2520,195 @@ class Window(QMainWindow, PlotWindow):
                 self.refresh_plots_signal.emit([5])
                 self.changes_made()
 
+    def onCurveClicked6(self, obj, event): # ver comentarios en onCurveClicked
+        if not self.moving_point[5] and not self.moving_vibrato[5]:
+            x = event.pos()[0]
+            y = event.pos()[1]
+            x_screen = int(event.screenPos()[0])
+            y_screen = int(event.screenPos()[1])
+            action = self.tongueSurfaceMenu.exec_(QtCore.QPoint(x_screen,y_screen))
+            if action == self.tongueSurfaceMenuPoint:
+                data = [x, int(y)]
+                dlg = SurfacePointForm(parent=self, data=data, max_t=self.route6['total_t'])
+                dlg.setWindowTitle("Add Point")
+                if dlg.exec():
+                    new_x = data[0]
+                    new_y = data[1]
+                    self.route6['points'].append([new_x, new_y])
+                    self.route6['points'].sort(key=lambda x: x[0])
+                    self.route6['history'].append(['add_point', [new_x, new_y]])
+                    self.changes_made()
+                    self.refresh_plots_signal.emit([6])
+            elif action == self.tongueSurfaceMenuTable:
+                data = [5, 0, self.route, self.route2, self.route3, self.route4, self.route5, self.route6, self.route7]
+                dlg = FuncTableForm(parent=self, data=data)
+                dlg.setWindowTitle("Function as table")
+                if dlg.exec():
+                    pass
+        else:
+            self.moving_point[5] = False
+            self.segundo_click[5] = False
+
+    def onPointsClicked6(self, obj, point, event): # ver comentarios en onPointsClicked
+        if not self.moving_point[5] and not self.moving_vibrato[5]:
+            x = event.pos()[0]
+            y = event.pos()[1]
+            x_screen = int(event.screenPos()[0])
+            y_screen = int(event.screenPos()[1])
+            action = self.pointMenu.exec_(QtCore.QPoint(x_screen,y_screen))
+            if action == self.movePoint:
+                self.changes_made()
+                self.moving_point[5] = True
+                self.moving_point_index[5] = self.find_closest_point(self.route6['points'], x, y)
+            elif action == self.editPoint:
+                index = self.find_closest_point(self.route6['points'], x, y)
+                data = self.route6['points'][index]
+                dlg = SurfacePointForm(parent=self, data=data, max_t=self.route6['total_t'])
+                dlg.setWindowTitle("Edit Point")
+                if dlg.exec():
+                    self.edit_item(5, 0, index, data)
+            elif action == self.deletePoint:
+                p = self.route6['points'][self.find_closest_point(self.route6['points'], x, y)]
+                self.route6['points'].remove(p)
+                self.route6['history'].append(['delete_point', p])
+                self.changes_made()
+                try:
+                    self.refresh_plots_signal.emit([6])
+                except:
+                    pass
+        else:
+            self.moving_point[5] = False
+            self.segundo_click[5] = False
+
+    def mouse_moved6(self, event): # ver comentarios en mouse_moved
+        if self.moving_point[5]:
+            self.segundo_click[5] = True
+            vb = self.graphicsView_6.plotItem.vb
+            mouse_point = vb.mapSceneToView(event)
+            x = round(mouse_point.x(), 2)
+            y = round(mouse_point.y(), 2)
+            min_x, max_x = self.find_moving_point_limits(self.route6['points'], self.moving_point_index[5], self.route6['total_t'])
+            if x > min_x and x < max_x:
+                if y >= 0 and y < 32:
+                    self.route6['points'][self.moving_point_index[5]] = [x, int(y)]
+                    self.refresh_plots_signal.emit([6])
+
+    def mouse_clicked6(self, event): # ver comentarios en mouse_clicked
+        if self.moving_point[5] and self.segundo_click[5]:
+            self.moving_point[5] = False
+            self.segundo_click[5] = False
+        else:
+            if event.double():
+                vb = self.graphicsView_6.plotItem.vb
+                mouse_point = vb.mapSceneToView(event.scenePos())
+                x = round(mouse_point.x(), 2)
+                y = round(mouse_point.y(), 0)
+                if y < 0:
+                    note = 0
+                elif y >= 0 and y < 32:
+                    note = int(y)
+                elif y >= 32:
+                    note = 31
+                self.route6['points'].append([x, note])
+                self.route6['points'].sort(key=lambda x: x[0])
+                self.route6['history'].append(['add_point', [x, note]])
+                self.refresh_plots_signal.emit([6])
+                self.changes_made()
+
+    def onCurveClicked7(self, obj, event): # ver comentarios en onCurveClicked
+        if not self.moving_point[6] and not self.moving_vibrato[6]:
+            x = event.pos()[0]
+            y = event.pos()[1]
+            x_screen = int(event.screenPos()[0])
+            y_screen = int(event.screenPos()[1])
+            action = self.tongueSurfaceMenu.exec_(QtCore.QPoint(x_screen,y_screen))
+            if action == self.tongueSurfaceMenuPoint:
+                data = [x, int(y)]
+                dlg = TonguePointForm(parent=self, data=data, max_t=self.route7['total_t'])
+                dlg.setWindowTitle("Add Point")
+                if dlg.exec():
+                    new_x = data[0]
+                    new_y = data[1]
+                    self.route7['points'].append([new_x, new_y])
+                    self.route7['points'].sort(key=lambda x: x[0])
+                    self.route7['history'].append(['add_point', [new_x, new_y]])
+                    self.changes_made()
+                    self.refresh_plots_signal.emit([7])
+            elif action == self.tongueSurfaceMenuTable:
+                data = [6, 0, self.route, self.route2, self.route3, self.route4, self.route5, self.route6, self.route7]
+                dlg = FuncTableForm(parent=self, data=data)
+                dlg.setWindowTitle("Function as table")
+                if dlg.exec():
+                    pass
+        else:
+            self.moving_point[6] = False
+            self.segundo_click[6] = False
+
+    def onPointsClicked7(self, obj, point, event): # ver comentarios en onPointsClicked
+        if not self.moving_point[6] and not self.moving_vibrato[6]:
+            x = event.pos()[0]
+            y = event.pos()[1]
+            x_screen = int(event.screenPos()[0])
+            y_screen = int(event.screenPos()[1])
+            action = self.pointMenu.exec_(QtCore.QPoint(x_screen,y_screen))
+            if action == self.movePoint:
+                self.changes_made()
+                self.moving_point[6] = True
+                self.moving_point_index[6] = self.find_closest_point(self.route7['points'], x, y)
+            elif action == self.editPoint:
+                index = self.find_closest_point(self.route7['points'], x, y)
+                data = self.route7['points'][index]
+                dlg = TonguePointForm(parent=self, data=data, max_t=self.route7['total_t'])
+                dlg.setWindowTitle("Edit Point")
+                if dlg.exec():
+                    self.edit_item(6, 0, index, data)
+            elif action == self.deletePoint:
+                p = self.route7['points'][self.find_closest_point(self.route7['points'], x, y)]
+                self.route7['points'].remove(p)
+                self.route7['history'].append(['delete_point', p])
+                self.changes_made()
+                try:
+                    self.refresh_plots_signal.emit([7])
+                except:
+                    pass
+        else:
+            self.moving_point[6] = False
+            self.segundo_click[6] = False
+
+    def mouse_moved7(self, event): # ver comentarios en mouse_moved
+        if self.moving_point[6]:
+            self.segundo_click[6] = True
+            vb = self.graphicsView_7.plotItem.vb
+            mouse_point = vb.mapSceneToView(event)
+            x = round(mouse_point.x(), 2)
+            y = round(mouse_point.y(), 2)
+            min_x, max_x = self.find_moving_point_limits(self.route7['points'], self.moving_point_index[6], self.route7['total_t'])
+            if x > min_x and x < max_x:
+                if y >= 0 and y < 4:
+                    self.route7['points'][self.moving_point_index[6]] = [x, int(y)]
+                    self.refresh_plots_signal.emit([7])
+
+    def mouse_clicked7(self, event): # ver comentarios en mouse_clicked
+        if self.moving_point[6] and self.segundo_click[6]:
+            self.moving_point[6] = False
+            self.segundo_click[6] = False
+        else:
+            if event.double():
+                vb = self.graphicsView_7.plotItem.vb
+                mouse_point = vb.mapSceneToView(event.scenePos())
+                x = round(mouse_point.x(), 2)
+                y = round(mouse_point.y(), 0)
+                if y < 0:
+                    note = 0
+                elif y >= 0 and y < 4:
+                    note = int(y)
+                elif y >= 4:
+                    note = 3
+                self.route7['points'].append([x, note])
+                self.route7['points'].sort(key=lambda x: x[0])
+                self.route7['history'].append(['add_point', [x, note]])
+                self.refresh_plots_signal.emit([7])
+                self.changes_made()
 
 #### Final de funciones de click y movimiento de mouse
 ####
@@ -2548,6 +2884,16 @@ class Window(QMainWindow, PlotWindow):
                 self.route5['trill'][index] = params
                 self.route5['trill'].sort(key=lambda x: x[0])
             self.refresh_plots_signal.emit([5]) # actualizamos grafico
+        elif func == 5: # para editar un elemento del sexto grafico
+            if prop == 0: # punto
+                self.route6['points'][index] = params
+                self.route6['points'].sort(key=lambda x: x[0])
+            self.refresh_plots_signal.emit([6]) # actualizamos grafico
+        elif func == 6: # para editar un elemento del septimo grafico
+            if prop == 0: # punto
+                self.route7['points'][index] = params
+                self.route7['points'].sort(key=lambda x: x[0])
+            self.refresh_plots_signal.emit([7]) # actualizamos grafico
 
     def delete_item(self, func, prop, index):
         """
@@ -2610,6 +2956,16 @@ class Window(QMainWindow, PlotWindow):
                 p = self.route5['trill'].pop(index)
                 self.route5['history'].append(['delete_trill', p])
             self.refresh_plots_signal.emit([5])
+        elif func == 5: # para eliminar un elemento del sexto grafico
+            if prop == 0: # punto
+                p = self.route6['points'].pop(index)
+                self.route6['history'].append(['delete_point', p])
+            self.refresh_plots_signal.emit([6])
+        elif func == 6: # para eliminar un elemento del septimo grafico
+            if prop == 0: # punto
+                p = self.route7['points'].pop(index)
+                self.route7['history'].append(['delete_point', p])
+            self.refresh_plots_signal.emit([7])
 
     def add_item(self, func, prop, params, from_func=False):
         """
@@ -2689,6 +3045,18 @@ class Window(QMainWindow, PlotWindow):
                 self.route5['trill'].sort(key=lambda x: x[0])
                 self.route5['history'].append(['add_trill', params])
             self.refresh_plots_signal.emit([5])
+        elif func == 5: # para agregar un elemento al sexto grafico
+            if prop == 0: # punto
+                self.route6['points'].append(params)
+                self.route6['points'].sort(key=lambda x: x[0])
+                self.route6['history'].append(['add_point', params])
+            self.refresh_plots_signal.emit([6])
+        elif func == 6: # para agregar un elemento al septimo grafico
+            if prop == 0: # punto
+                self.route7['points'].append(params)
+                self.route7['points'].sort(key=lambda x: x[0])
+                self.route7['history'].append(['add_point', params])
+            self.refresh_plots_signal.emit([7])
 
     def populate_graph(self): # rellena las rutas de las trayectorias con una ruta estandar, de 20s de duracion con un punto en cada trayectoria
         self.route = {  # la ruta que define el primer grafico
@@ -2728,6 +3096,18 @@ class Window(QMainWindow, PlotWindow):
                         'Fs': 100,
                         'notes': [],
                         'trill': [],
+                        'history': []
+                     }
+        self.route6 = {   # la ruta que define el segundo grafico
+                        'total_t': 20,
+                        'Fs': 100,
+                        'points': [[0, 31]],
+                        'history': []
+                     }
+        self.route7 = {   # la ruta que define el segundo grafico
+                        'total_t': 20,
+                        'Fs': 100,
+                        'points': [[0, 0]],
                         'history': []
                      }
 
@@ -2836,6 +3216,16 @@ class Window(QMainWindow, PlotWindow):
         self.scatter5.setData(px, py)
         self.vibscatter5.setData(tr_x, tr_y)
 
+    def reprint_plot_6(self): # actualiza la curva para la trayectoria del segundo grafico. Ver comentarios de reprint_plot_1
+        t, f, px, py = calculate_route_tongue(self.route6)
+        self.func6.setData(t, f)
+        self.scatter6.setData(px, py)
+    
+    def reprint_plot_7(self): # actualiza la curva para la trayectoria del segundo grafico. Ver comentarios de reprint_plot_1
+        t, f, px, py = calculate_route_tongue(self.route7)
+        self.func7.setData(t, f)
+        self.scatter7.setData(px, py)
+
     def checkBox_clicked(self, value): # revisa cambios en el estado del checkBox
         if value:
             self.graphicsView.show() # muestra el primer grafico
@@ -2865,6 +3255,24 @@ class Window(QMainWindow, PlotWindow):
             self.graphicsView_5.show() # muestra el quinto grafico
         else:
             self.graphicsView_5.hide() # esconde el quinto grafico
+
+    def checkBox6_clicked(self, value): # revisa cambios en el estado del checkBox5
+        if value:
+            self.graphicsView_6.show() # muestra el quinto grafico
+        else:
+            self.graphicsView_6.hide() # esconde el quinto grafico
+
+    def checkBox7_clicked(self, value): # revisa cambios en el estado del checkBox5
+        if value:
+            self.graphicsView_7.show() # muestra el quinto grafico
+        else:
+            self.graphicsView_7.hide() # esconde el quinto grafico
+    
+    def checkBox8_clicked(self, value): # revisa cambios en el estado del checkBox5
+        if value:
+            self.graphicsView_8.show() # muestra el quinto grafico
+        else:
+            self.graphicsView_8.hide() # esconde el quinto grafico
 
     def plot_measure(self, measure, title):
         '''

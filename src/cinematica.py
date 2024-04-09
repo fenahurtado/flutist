@@ -10,7 +10,7 @@ class State:
     '''
     Esta clase es de utilidad para transformaciones entre el espacio de la tarea y el de las articulaciones.
     '''
-    def __init__(self, r, theta, o, flow, vibrato_freq=0, vibrato_amp=0):
+    def __init__(self, r, theta, o, flow, vibrato_freq=0, vibrato_amp=0, lips=31, tongue=0):
         self._r = r
         self._theta = theta
         self._o = o
@@ -26,6 +26,8 @@ class State:
         self.flow = flow
         self.vibrato_freq = vibrato_freq
         self.vibrato_amp = vibrato_amp
+        self.lips = lips
+        self.tongue = tongue
     
     @property
     def r(self):

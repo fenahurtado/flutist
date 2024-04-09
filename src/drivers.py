@@ -475,7 +475,7 @@ class AMCIDriver(Process):
                 if self.initial_settings.desired_input_2_function_bits == INPUT_FUNCTION_BITS['CCW Limit']: # el eje alpha tiene su rutina de homing hacia el sentido opuesto del reloj, mientras que los otros dos ejes la tienen en sentido contrario. Esto resulta util para algunas diferencias en sus procesos de homing. Cuando los ejes X y Z alcanzan el limit switch simplemente toman una distancia de seguridad y asignan ese punto como su origen. El eje alpha en cambio debe quedar horizontal, por lo que al encontrar el limit switch despues se mueve una cierta cantidad de pasos (calculado como el offset del limit switch) y define ese punto como su origen.
                     print("Buscando CCW")
                     self.ccw_find_home_to_limit() # inicia la busqueda del origen. Esta rutina tiene dos etapas. Primero busca el origen a una velocidad mayor, cuando lo encuentra toma un poco de distancia y lo vuelve a buscar pero más lento para tener mayor precisión. 
-                    self.fast_ccw_limit_homing = True # Inicia rápido hasta que se activa el limit switch
+                    self.slow_ccw_limit_homing = True # Inicia rápido hasta que se activa el limit switch
                     while self.fast_ccw_limit_homing or self.slow_ccw_limit_homing: # mientras no termine las dos etapas se mantiene en loop
                         #print(self.hostname, 'Still not homed...', self.module_ok, self.stopped, self.move_complete, self.moving_ccw)
                         time.sleep(0.5)
@@ -494,7 +494,7 @@ class AMCIDriver(Process):
                                 steps = [{'pos': 300, 'speed': 400, 'acc': 400, 'dec': 400, 'jerk': 0}, 
                                             {'pos': -350, 'speed': 100, 'acc': 400, 'dec': 400, 'jerk': 0}]
                                 self.program_run_assembled_move(steps, dwell_move=1, dwell_time=100, motor_current=self.motor_current)
-                                time.sleep(1)
+                                time.sleep(3)
 
                             elif self.slow_ccw_limit_homing: # si estaba moviendose lento cuando se activo la condición se sale del loop
                                 if self.verbose:
@@ -654,10 +654,7 @@ class AMCIDriver(Process):
         MV_I_vel = self.MV_I0_vel + self.Ki_vel*self.Ts*e_vel - self.Ka_vel*self.sat(self.MV_vel,self.MV_low_vel,self.MV_high_vel)
         MV_D_vel = self.Kd_vel*(e_vel-self.e0_vel)/self.Ts
 
-        if abs(ref_vel) <= 3 and abs(SP_vel) <= 10:
-            MV_I = self.MV_I0 + 10*self.Ts*e - self.Ka*self.sat(self.MV,self.MV_low,self.MV_high)
-        else:
-            MV_I = 0 #self.MV_I0 + 0*self.Ts*e - self.Ka*self.sat(self.MV,self.MV_low,self.MV_high)
+        MV_I = self.MV_I0 + self.Ki*self.Ts*e - self.Ka*self.sat(self.MV,self.MV_low,self.MV_high)
         MV_D = self.Kd*(e-self.e0)/self.Ts
         #print(MV_P, MV_I, MV_D)
         self.MV = int(round(SP + MV_P + MV_I + MV_D, 0))
@@ -672,7 +669,7 @@ class AMCIDriver(Process):
 
         self.last_pos = CV
 
-        return int(round(SP, 0)), int(round(SP_vel, 0)) #self.MV, self.MV_vel
+        return self.MV, self.MV_vel # int(round(SP, 0)), int(round(SP_vel, 0))
     
     def sat(self, x, low, high): # satura x en low y high
         if x < low:
@@ -710,8 +707,8 @@ class AMCIDriver(Process):
         return command
 
     def ccw_find_home_to_limit(self): # función para buscar el home contra el sentido del reloj
-        self.fast_ccw_limit_homing = True
-        ccw_jog = self.get_ccw_jog_command(programmed_speed=400, acceleration=5, motor_current=self.motor_current)
+        #self.fast_ccw_limit_homing = True
+        ccw_jog = self.get_ccw_jog_command(programmed_speed=100, acceleration=5, motor_current=self.motor_current)
         self.comm_data[self.hostname + '_out'] = ccw_jog.get_list_to_send()
     
     def cw_find_home_to_limit(self): # función para buscar el home al sentido del reloj
@@ -1316,6 +1313,7 @@ class VirtualFingers(threading.Thread):
         while self.running.is_set(): # corre durante toda la ejecución principal
             t = time.time() - self.t0
             self.note, self.aperture, self.tongue = self.get_ref(t) # de acuerdo al tiempo actual actualiza la nota a partir de la ruta
+            #print(self.note, self.aperture, self.tongue, t, self.ref[:5])
             if self.verbose:
                 print(t, self.note, self.aperture, self.tongue)
             self.update_ref(t) # actualiza la lista eliminando los datos de tiempo menor al actual
@@ -1340,18 +1338,21 @@ class VirtualFingers(threading.Thread):
             for i in self.ref:
                 if i[0] > t:
                     pos = i[1] # busca el primer elemento de la ruta cuyo tiempo sea mayor al actual. A diferencia de los otros ejes virtuales, las notas son discretas por lo que no es necesario hacer una interpolacion
+                    break
         else:
             pos = self.ref[-1][1] # si t_actual > t_final de la ruta referencia la nota se mantiene
         if self.lips_surface_ref[-1][0] > t: # si la ruta esta definida hasta un t_final > t_actual
             for i in self.lips_surface_ref:
                 if i[0] > t:
                     apertura = i[1] # busca el primer elemento de la ruta cuyo tiempo sea mayor al actual. A diferencia de los otros ejes virtuales, las notas son discretas por lo que no es necesario hacer una interpolacion
+                    break
         else:
             apertura = self.lips_surface_ref[-1][1] # si t_actual > t_final de la ruta referencia la nota se mantiene
         if self.tongue_ref[-1][0] > t: # si la ruta esta definida hasta un t_final > t_actual
             for i in self.tongue_ref:
                 if i[0] > t:
                     tongue = i[1] # busca el primer elemento de la ruta cuyo tiempo sea mayor al actual. A diferencia de los otros ejes virtuales, las notas son discretas por lo que no es necesario hacer una interpolacion
+                    break
         else:
             tongue = self.tongue_ref[-1][1] # si t_actual > t_final de la ruta referencia la nota se mantiene
         return pos, apertura, tongue
@@ -1565,6 +1566,8 @@ class FingersDriver(Process):
         self.hostname = hostname
         self.comm_pipe = comm_pipe # pipe que conecta a la central de comunicacion
         self.note_played = Array('c', b'D3 ')
+        self.tongue_played = Value("i", 0)
+        self.lips_played = Value("i", 31)
         # Variables de músico
         self.instrument = instrument #instrumento seleccionado. Define el diccionario a usar y las llaves disponibles
         self.note_dict = instrument_dicts[instrument]
@@ -1604,6 +1607,8 @@ class FingersDriver(Process):
                     #print(self.state)
 
                     self.note_played.value = bytes(dict_notes[ref_note].ljust(3, ' '), 'utf-8')
+                    self.tongue_played.value = ref_tongue
+                    self.lips_played.value = ref_aperture
                     self.comm_pipe.send(["setAttrSingle", self.hostname, 0x04, 100, 0x03, self.state]) # a diferencia de los otros drivers, como los cambios de nota son menos frecuentes, se usa la mensajería explicita
                     last_note = ref_note
                     last_aperture = ref_aperture

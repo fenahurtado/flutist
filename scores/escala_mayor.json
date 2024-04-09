@@ -96,6 +96,14 @@
         ],
         "total_t": 8.0
     },
+    "dynamics": {
+        "total_t": 8.0, 
+        "Fs": 100, 
+        "points": [[0, "00_default"]], 
+        "filters": [], 
+        "vibrato": [], 
+        "history": []
+    },
     "route_flow": {
         "Fs": 100,
         "filters": [],
@@ -559,6 +567,28 @@
         ],
         "total_t": 8.0,
         "vibrato": []
+    },
+    "route_lips": {
+        "Fs": 100,
+        "history": [],
+        "points": [
+            [
+                0,
+                31
+            ]
+        ],
+        "total_t": 8.0
+    },
+    "route_tongue": {
+        "Fs": 100,
+        "history": [],
+        "points": [
+            [
+                0,
+                0
+            ]
+        ],
+        "total_t": 8.0
     },
     "timestamp": "25/04/2023 18:02:57"
 }

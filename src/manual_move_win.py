@@ -1,6 +1,6 @@
 from PyQt5 import QtGui, QtCore, QtWidgets
 from src.views.manual_move import Ui_MainWindow as ManualWindow
-from PyQt5.QtWidgets import QApplication, QMainWindow
+from PyQt5.QtWidgets import QApplication, QMainWindow, QFileDialog
 import sys
 import json
 from src.route import dict_notes, dict_notes_rev
@@ -18,18 +18,19 @@ class ManualWindow(QMainWindow, ManualWindow):
         super().__init__(parent)
         self.setupUi(self)
         self.app = app
+        self.parent = parent
         self.musician_pipe = musician_pipe # pipe que conecta con el musico para darle instrucciones
         self.data = data # data compartida entre procesos
         self.noteComboBox.addItems(list(dict_notes.values())) # agregamos las notas al combo box (depende del instrumento elegido)
 
         # preparamos la tabla para las posiciones de las notas
-        self.tableWidget.setColumnCount(4) # 4 columnas: l, theta, offset y flow
+        self.tableWidget.setColumnCount(5) # 5 columnas: l, theta, offset, flow y lips
         self.tableWidget.setRowCount(len(LOOK_UP_TABLE)) # una fila por nota
 
         labels = list(LOOK_UP_TABLE.keys()) # los nombres de las notas (como labels)
         self.tableWidget.setVerticalHeaderLabels(labels) # los fijamos en el eje vertical
 
-        labels = ["l [mm]", "theta [°]", "offset [mm]", "flow [SLPM]"] # labels para el eje horizontal
+        labels = ["l [mm]", "theta [°]", "offset [mm]", "flow [SLPM]", "lips [pos]"] # labels para el eje horizontal
         self.tableWidget.setHorizontalHeaderLabels(labels)
         self.tableWidget.setAlternatingRowColors(True) # tabla con lineas gris y blanco
 
@@ -44,6 +45,8 @@ class ManualWindow(QMainWindow, ManualWindow):
             self.tableWidget.setItem(row, 2, item)
             item = QtWidgets.QTableWidgetItem(str(value['flow']))
             self.tableWidget.setItem(row, 3, item)
+            item = QtWidgets.QTableWidgetItem(str(value['lips']))
+            self.tableWidget.setItem(row, 4, item)
             row += 1
 
         self.tableWidget.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch) # si la ventana cambia de tamaño la tabla tambien
@@ -83,15 +86,50 @@ class ManualWindow(QMainWindow, ManualWindow):
         self.tongue_slider.valueChanged.connect(self.tongue_move_pressed)
         # self.tongue_slider.sliderReleased.connect(self.tongue_move_released)
         self.lips_surface_slider.valueChanged.connect(self.change_lips_surface)
+        self.setNoteDictionary.clicked.connect(self.set_note_in_dictionary)
+        self.actionSaveDictionayAs.triggered.connect(self.save_dict_as)
     
+    def save_dict_as(self):
+        fname, _ = QFileDialog.getSaveFileName(self, 'Open file', self.parent.base_path,"JSON files (*.json)")
+        if fname != '':
+            if fname[-5:] != '.json':
+                fname += '.json'
+            with open(fname, 'w') as file: # inmediatamente se actualiza la lista en el archivo, asi cuando se vuelve a correr el programa quedan guardados los valores
+                json.dump(LOOK_UP_TABLE, file, indent=4, sort_keys=False)
+
+    def set_note_in_dictionary(self):
+        note = self.data['notes'][-1]
+        l = self.data['radius'][-1]
+        theta = self.data['theta'][-1]
+        offset = self.data['offset'][-1]
+        flow = self.data['mass_flow'][-1]
+        lips = self.data['lips'][-1]
+        LOOK_UP_TABLE[note]['l'] = l
+        LOOK_UP_TABLE[note]['theta'] = theta
+        LOOK_UP_TABLE[note]['offset'] = offset
+        LOOK_UP_TABLE[note]['lips'] = lips
+        row = list(LOOK_UP_TABLE.keys()).index(note)
+        item = QtWidgets.QTableWidgetItem(str(l))
+        self.tableWidget.setItem(row, 0, item)
+        item = QtWidgets.QTableWidgetItem(str(theta))
+        self.tableWidget.setItem(row, 1, item)
+        item = QtWidgets.QTableWidgetItem(str(offset))
+        self.tableWidget.setItem(row, 2, item)
+        item = QtWidgets.QTableWidgetItem(str(flow))
+        self.tableWidget.setItem(row, 3, item)
+        item = QtWidgets.QTableWidgetItem(str(lips))
+        self.tableWidget.setItem(row, 4, item)
+
     def tongue_move_pressed(self, value):
         self.musician_pipe.send(['execute_tongue_action', value])
+        self.tongue_label.setText(str(value))
 
     # def tongue_move_released(self):
     #     self.tongue_slider.setValue(0)
 
     def change_lips_surface(self, value):
         self.musician_pipe.send(['execute_lips_surface_action', value]) # se envia primero la instruccion de cambiar la digitacion
+        self.surface_label.setText(str(value))
 
     def rotate(self, x1, z1, xr, zr, alpha): # funcion para encontrar la posicion final de una rotacion en alpha grados de un punto, con centro de rotacion en xr, zr
         xf = (x1 - xr) * np.cos(alpha) - (z1 - zr) * np.sin(alpha) + xr
@@ -167,6 +205,7 @@ class ManualWindow(QMainWindow, ManualWindow):
             self.desired_state.theta = pos['theta']
             self.desired_state.o = pos['offset']
             self.desired_state.flow = pos['flow']
+            self.desired_state.lips = pos['lips']
             self.desired_state.vibrato_amp = 0
             self.desired_state.vibrato_freq = 0
             self.musician_pipe.send(["move_to", self.desired_state, None, False, False, False, False, self.speed]) # le pedimos al musico que se mueva a la posición asociada a la nota
@@ -187,6 +226,8 @@ class ManualWindow(QMainWindow, ManualWindow):
         self.offsetSpinBox.setValue(self.desired_state.o)
         self.freqSpinBox.setValue(self.desired_state.vibrato_freq)
         self.ampSpinBox.setValue(self.desired_state.vibrato_amp)
+        self.lips_surface_slider.setValue(self.desired_state.lips)
+        self.tongue_slider.setValue(self.desired_state.tongue)
 
     def change_x(self, value): # cuando el usuario escribe un cambio en el spinbox de X, esta funcion se encarga de la instruccion al musico
         if not self.changing_other:
@@ -270,6 +311,9 @@ class ManualWindow(QMainWindow, ManualWindow):
         # Check the input is a number
         try:
             new_value = float(new_value)
+            if key2 == "lips":
+                new_value = int(min(max(new_value, 0), 31))
+                item.setText(str(new_value))
         except:
             # si no es un numero, se vuelve a poner en la casilla el valor que se tenía antes y se retorna
             item.setText(str(LOOK_UP_TABLE[key][key2]))

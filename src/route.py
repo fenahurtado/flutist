@@ -321,3 +321,22 @@ def calculate_notes_route(route):
 
     return t, f, x_points, y_points, tr_x, tr_y # y retornamos el vector de tiempo, la funcion final, las listas de las posiciones de los tiempos y las listas de las posiciones de los trills
 
+def calculate_route_tongue(route):
+    t_total = route['total_t']
+    Fs = route['Fs']
+    points = route['points']
+    t = np.linspace(0, t_total, int(round(t_total*Fs, 0)))
+    f = get_new_route(t_total, Fs) # partimos con un arreglo se ceros
+
+    x_points = []
+    y_points = []
+    if len(points): # si hay alguna nota, partimos de esta nota (la sumamos como offset)
+        alt_i = points[0][1]
+        f += alt_i
+    for n in points: # ahora nos encargamos de pasar por los puntos haciendo el ZO
+        x_points.append(n[0])
+        y_points.append(n[1])
+        f += np.heaviside(t - n[0], 1) * (n[1] - alt_i) # sumamos los escalones
+        alt_i = n[1]
+
+    return t, f, x_points, y_points # y retornamos el vector de tiempo, la funcion final, las listas de las posiciones de los tiempos

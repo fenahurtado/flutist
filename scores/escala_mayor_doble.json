@@ -2703,5 +2703,35 @@
         "total_t": 7.5,
         "vibrato": []
     },
+    "route_lips": {
+        "Fs": 100,
+        "history": [],
+        "points": [
+            [
+                0,
+                31
+            ]
+        ],
+        "total_t": 7.5
+    },
+    "dynamics": {
+        "total_t": 7.5, 
+        "Fs": 100, 
+        "points": [[0, "00_default"]], 
+        "filters": [], 
+        "vibrato": [], 
+        "history": []
+    },
+    "route_tongue": {
+        "Fs": 100,
+        "history": [],
+        "points": [
+            [
+                0,
+                0
+            ]
+        ],
+        "total_t": 7.5
+    },
     "timestamp": "08/05/2023 18:55:19"
 }

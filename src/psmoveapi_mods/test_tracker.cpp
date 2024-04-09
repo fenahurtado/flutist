@@ -74,19 +74,20 @@ struct ControllerState {
 
 bool terminate_thread = false;
 
-void print_status(PSMove *move) {
+void print_status(PSMove *move, PSMove *move2) {
     char *serial = psmove_get_serial(move);
     while (true) {
         if (terminate_thread) {
             return;
         }
         int res = psmove_poll(move);
+        int res2 = psmove_poll(move2);
         if (res) {
             int x1, y1, z1, x2, y2, z2, x3, y3, z3;
             psmove_get_accelerometer(move, &x1, &y1, &z1);
             psmove_get_gyroscope(move, &x2, &y2, &z2);
             psmove_get_magnetometer(move, &x3, &y3, &z3);
-            printf("state %s %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %x\n", serial, psmove_get_trigger(move), x1, y1, z1, x2, y2, z2, x3, y3, z3, psmove_get_buttons(move));
+            printf("state %s %5d %5d %5d %5d %5d %5d %5d %5d %5d %5d %x %x %5d\n", serial, psmove_get_trigger(move), x1, y1, z1, x2, y2, z2, x3, y3, z3, psmove_get_buttons(move), psmove_get_buttons(move2), psmove_get_trigger(move2));
             fflush(stdout);
         }
     }
@@ -317,10 +318,12 @@ main(int arg, char *args[])
 
     PSMove *move;
     move = psmove_connect_by_id(1);
+    PSMove *move2;
+    move2 = psmove_connect_by_id(0);
     int res = 0;
 
     // psmove_set_rate_limiting(move, 1);
-    std::thread thread_obj(print_status, move);
+    std::thread thread_obj(print_status, move, move2);
     
     while (true) {
         int key = cvWaitKey(1) & 0xFF;

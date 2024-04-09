@@ -36,6 +36,8 @@ class Musician(Process):
         self.loaded_route_alpha = [] # arreglo donde se almacenara una ruta pre cargada para el eje alpha
         self.loaded_route_flow = [] # arreglo donde se almacenara una ruta pre cargada para el flujo
         self.loaded_route_notes = [] # arreglo donde se almacenara una ruta pre cargada para los dedos
+        self.loaded_route_aperture = []
+        self.loaded_route_tongue = []
     
     def run(self): # funcion principal, que se llama cuando se inicia el proceso
         global DATA
@@ -215,6 +217,8 @@ class Musician(Process):
                     self.loaded_route_alpha = message[3]
                     self.loaded_route_flow = message[4]
                     self.loaded_route_notes = message[5]
+                    self.loaded_route_aperture = message[6]
+                    self.loaded_route_tongue = message[7]
                 elif  message[0] == "start_loaded_script": # ejecuta las rutas que se habian cargado anteriormente
                     if message[1]: # el message[1] es un bool que dice si se graba durante la ejecucion
                         self.memory_conn.send(["start_saving"]) # la memoria va guardando los valores de cada parametro
@@ -369,7 +373,10 @@ class Musician(Process):
             self.alpha_virtual_axis_conn.send(["merge_ref", route_alpha])
         if self.flow_connect:
             self.virtual_flow_conn.send(["merge_ref", route_flow, desired_state.vibrato_amp, desired_state.vibrato_freq])
-
+        if self.fingers_connect:
+            self.virtual_fingers_conn.send(["merge_lips_surface_ref", [(0, desired_state.lips)]])
+            self.virtual_fingers_conn.send(["merge_tongue_ref", [(0, desired_state.tongue)]])
+            
         return route['t'][-1] # retornamos el tiempo que dura el movimiento
 
     def start_loaded_script(self):
@@ -405,6 +412,8 @@ class Musician(Process):
             self.loaded_route_alpha[i][0] += t_start
             self.loaded_route_flow[i][0] += t_start
             self.loaded_route_notes[i][0] += t_start
+            self.loaded_route_aperture[i][0] += t_start
+            self.loaded_route_tongue[i][0] += t_start
         
         # finalmente enviamos las trayectorias a cada uno de los dispositivos
         if self.x_connect:
@@ -417,6 +426,8 @@ class Musician(Process):
             self.virtual_flow_conn.send(["merge_ref", self.loaded_route_flow, 0, 0])
         if self.fingers_connect:
             self.virtual_fingers_conn.send(["merge_ref", self.loaded_route_notes])
+            self.virtual_fingers_conn.send(["merge_lips_surface_ref", self.loaded_route_aperture])
+            self.virtual_fingers_conn.send(["merge_tongue_ref", self.loaded_route_tongue])
 
     def stop(self): # detiene cada uno de los dispositivos
         self.x_virtual_axis_conn.send(["stop"])
@@ -481,6 +492,8 @@ class Memory(Process):
         self.data['mass_flow'] = linspace(0,0,200)
         self.data['temperature'] = linspace(0,0,200)
         self.data['frequency'] = linspace(0,0,200)
+        self.data['tongue'] = linspace(0,0,200)
+        self.data['lips'] = linspace(0,0,200)
         self.data['notes'] = ['D3' for i in range(200)]
         self.data['times'] = linspace(0,0,200)
         
@@ -489,7 +502,7 @@ class Memory(Process):
         self.t1 = 0
 
         # tambien creamos un data frame para cuando queramos grabar. Este tiene las columnas de todas las variables medidas
-        self.data_frame = pd.DataFrame(columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'offset_ref', 'theta_ref', 'radius_ref', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref'])
+        self.data_frame = pd.DataFrame(columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'offset_ref', 'theta_ref', 'radius_ref', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref', 'tongue', 'lips'])
 
         self.interval = interval
         self.running = running
@@ -503,6 +516,8 @@ class Memory(Process):
             self.ref_state.z = z_units_to_mm(self.z_driver.pos_ref.value)
             self.ref_state.alpha = alpha_units_to_angle(self.alpha_driver.pos_ref.value)
             self.ref_state.flow = self.flow_controller.mass_flow_set_point_reading.value
+            self.ref_state.tongue = self.fingers_driver.tongue_played.value
+            self.ref_state.lips = self.fingers_driver.lips_played.value
             self.real_state.x = encoder_units_to_mm(self.x_driver.encoder_position.value)
             self.real_state.z = z_units_to_mm(self.z_driver.encoder_position.value)
             self.real_state.alpha = alpha_units_to_angle(self.alpha_driver.encoder_position.value)
@@ -528,13 +543,15 @@ class Memory(Process):
             self.data['mass_flow'] = np.hstack([self.data['mass_flow'][1:], self.flow_controller.mass_flow_reading.value])
             self.data['temperature'] = np.hstack([self.data['temperature'][1:], self.flow_controller.temperature_reading.value])
             self.data['frequency'] = np.hstack([self.data['frequency'][1:], self.microphone.pitch.value])
+            self.data['tongue'] = np.hstack([self.data['tongue'][1:], self.ref_state.tongue])
+            self.data['lips'] = np.hstack([self.data['lips'][1:], self.ref_state.lips])
             self.data['notes'] = self.data['notes'][1:] + [self.fingers_driver.note_played.value.decode('utf-8').strip()]
             self.data['times'] = np.hstack([self.data['times'][1:], time.time() - self.t0])  
             if self.saving: # si esta condicion esta activa agregaremos el estado actual al dataframe como una entrada
                 if self.first_entry: # si es la primera entrada del data frame, tomamos el tiempo actual y lo usamos como tiempo inicial para desfasar todas las entradas, y asi partir en cero
                     self.t1 = self.data['times'][-1]
                     self.first_entry = False
-                new_data = pd.DataFrame([[self.data['times'][-1] - self.t1, self.data['frequency'][-1], self.data["temperature"][-1], self.data["mass_flow"][-1], self.data["volume_flow"][-1], self.data["mouth_pressure"][-1], self.data["offset"][-1], self.data["theta"][-1], self.data["radius"][-1], self.data["offset_ref"][-1], self.data["theta_ref"][-1], self.data["radius_ref"][-1], self.data["alpha"][-1], self.data["z"][-1], self.data["x"][-1], self.data["alpha_ref"][-1], self.data["z_ref"][-1], self.data["x_ref"][-1], self.data["flow_ref"][-1], self.data['notes'][-1]]], columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'offset_ref', 'theta_ref', 'radius_ref', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref', 'note']) # creamos la nueva entrada
+                new_data = pd.DataFrame([[self.data['times'][-1] - self.t1, self.data['frequency'][-1], self.data["temperature"][-1], self.data["mass_flow"][-1], self.data["volume_flow"][-1], self.data["mouth_pressure"][-1], self.data["offset"][-1], self.data["theta"][-1], self.data["radius"][-1], self.data["offset_ref"][-1], self.data["theta_ref"][-1], self.data["radius_ref"][-1], self.data["alpha"][-1], self.data["z"][-1], self.data["x"][-1], self.data["alpha_ref"][-1], self.data["z_ref"][-1], self.data["x_ref"][-1], self.data["flow_ref"][-1], self.data['notes'][-1], self.data["tongue"][-1], self.data['lips'][-1]]], columns=['times','frequency','temperature','mass_flow', 'volume_flow', 'mouth_pressure', 'offset', 'theta', 'radius', 'offset_ref', 'theta_ref', 'radius_ref', 'alpha', 'z', 'x', 'alpha_ref', 'z_ref', 'x_ref', 'flow_ref', 'note', 'tongue', 'lips']) # creamos la nueva entrada
                 self.data_frame = pd.concat([self.data_frame, new_data], ignore_index=True) # y la concatenamos con lo que teniamos
             
             if self.pipe_end.poll(self.interval): # luego escuchamos si hay instrucciones del musico. Acá esperamos 0.01s
